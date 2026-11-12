@@ -300,9 +300,9 @@ export default function Settings() {
               <summary>Restore a backup</summary>
               <div>
                 <p>
-                  Restore into an empty ledger. Existing category defaults will
-                  be replaced with the backup. Bank credentials and MCP access
-                  must be connected again.
+                  Restore into an empty ledger. Existing categories will be
+                  replaced with the backup. Bank credentials and MCP access must
+                  be connected again.
                 </p>
                 <Field label="Choose a Phooey JSON backup">
                   <input

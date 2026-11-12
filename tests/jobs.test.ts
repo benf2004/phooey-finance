@@ -1,3 +1,4 @@
+import { categoryFixtures } from "./fixtures";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { readFile, readdir } from "node:fs/promises";
@@ -50,6 +51,7 @@ beforeEach(async () => {
     await env.DB.exec(
       (await readFile("migrations/" + file, "utf8")).replaceAll("\n", " "),
     );
+  await env.DB.exec(categoryFixtures.replaceAll("\n", " "));
   ledger = new Ledger(env.DB);
   sent.length = 0;
 });
@@ -103,6 +105,39 @@ const providerData = (count = 205) => ({
   ],
 });
 describe("durable jobs and recovery", () => {
+  it("removes unused legacy defaults while preserving used and customized categories", async () => {
+    const a = await account();
+    await ledger.saveTransaction({
+      account_id: a,
+      posted: "2026-01-01",
+      amount: -100,
+      description: "Used category",
+      type: "expense",
+      category_id: "office",
+    });
+    await env.DB.exec(
+      "INSERT INTO categories(id,name,type,tax_treatment,color) VALUES('salary','Custom salary name','income','personal','#28634a'),('tax','Tax payments','expense','tax_payment','#b88a43')",
+    );
+    await ledger.saveCategory(
+      {
+        name: "Tax payments",
+        type: "expense",
+        tax_treatment: "tax_payment",
+        color: "#b88a43",
+      },
+      "tax",
+    );
+    await env.DB.exec(
+      (
+        await readFile("migrations/0004_remove_default_categories.sql", "utf8")
+      ).replaceAll("\n", " "),
+    );
+    expect((await ledger.categories()).map((c) => c.id).sort()).toEqual([
+      "office",
+      "salary",
+      "tax",
+    ]);
+  });
   it.skipIf(!process.env.SIMPLEFIN_LIVE)(
     "connects to the official SimpleFIN demo service",
     async () => {

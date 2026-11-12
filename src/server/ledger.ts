@@ -513,7 +513,7 @@ export class Ledger {
         .bind(guard, a, b, a, left.revision, b, right.revision),
       this.db
         .prepare(
-          "UPDATE transactions SET transfer_id=?,type='transfer',category_id='transfer',user_edited=1,reviewed=1,revision=revision+1 WHERE id IN (?,?)",
+          "UPDATE transactions SET transfer_id=?,type='transfer',category_id=NULL,user_edited=1,reviewed=1,revision=revision+1 WHERE id IN (?,?)",
         )
         .bind(transfer, a, b),
       this.auditStatement("transfer.link", a, left, {

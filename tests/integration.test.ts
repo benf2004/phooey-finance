@@ -1,6 +1,7 @@
+import { categoryFixtures } from "./fixtures";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { hash as passwordHash } from "bcryptjs";
 import { randomBytes, createHash } from "node:crypto";
 let mf: Miniflare, cookie: string;
@@ -56,19 +57,11 @@ beforeAll(async () => {
     }),
   );
   db = await mf.getD1Database("DB");
-  await db.exec(
-    (await readFile("migrations/0001_initial.sql", "utf8")).replaceAll(
-      "\n",
-      " ",
-    ),
-  );
-  await db.exec(await readFile("migrations/0002_sync_recovery.sql", "utf8"));
-  await db.exec(
-    (await readFile("migrations/0003_sync_generation.sql", "utf8")).replaceAll(
-      "\n",
-      " ",
-    ),
-  );
+  for (const file of (await readdir("migrations")).sort()) {
+    await db.exec(
+      (await readFile("migrations/" + file, "utf8")).replaceAll("\n", " "),
+    );
+  }
   const login = await req("/api/login", "POST", {
     username: "admin",
     password: "test-password-only",
@@ -78,6 +71,10 @@ beforeAll(async () => {
 });
 afterAll(async () => await mf?.dispose());
 describe("real Worker and D1 integration", () => {
+  it("starts with no categories; tests create their own fixtures", async () => {
+    expect(await json("/api/categories")).toEqual([]);
+    await db.exec(categoryFixtures.replaceAll("\n", " "));
+  });
   it("protects APIs and rejects cross-origin mutations", async () => {
     expect(
       (await mf.dispatchFetch("http://127.0.0.1/api/accounts")).status,
@@ -196,6 +193,10 @@ describe("real Worker and D1 integration", () => {
       type: "income",
     });
     await json("/api/transfers", "POST", { first: a.id, second: b.id });
+    expect((await json("/api/transactions/" + a.id)).category_id).toBeNull();
+    expect(
+      (await json("/api/categories")).some((c: any) => c.type === "transfer"),
+    ).toBe(false);
     const report = await json("/api/report?from=2026-02-01&to=2026-02-28");
     expect(report.groups.USD.expenses).toBe(15000);
     expect(report.groups.USD.income).toBe(0);

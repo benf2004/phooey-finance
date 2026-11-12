@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
 const statements = [
+  "INSERT OR IGNORE INTO categories(id,name,type,tax_treatment,color) VALUES\n('income','Business income','income','business_income','#28634a'),('salary','Salary','income','personal','#28634a'),('software','Software & subscriptions','expense','business_expense','#28634a'),('office','Office & equipment','expense','business_expense','#8c7864'),('travel','Business travel','expense','business_expense','#8c7864'),('dining','Food & dining','expense','personal','#b88a43'),('groceries','Groceries','expense','personal','#8c7864'),('home','Home & utilities','expense','personal','#8c7864'),('shopping','Shopping','expense','personal','#8c7864'),('tax','Tax payments','expense','tax_payment','#b88a43'),('transfer','Transfers','transfer','excluded','#78877d');",
   "INSERT OR REPLACE INTO settings(key,value) VALUES('demo','true');",
   "INSERT OR IGNORE INTO accounts(id,name,institution,kind,currency,balance,balance_at) VALUES('demo-checking','Everyday checking','Demo Bank','checking','USD',1246800,'2026-11-12T08:00:00Z'),('demo-business','Business checking','Demo Bank','checking','USD',1824500,'2026-11-12T08:00:00Z'),('demo-savings','Rainy day fund','Demo Bank','savings','USD',2250000,'2026-11-12T08:00:00Z'),('demo-credit','Everyday card','Demo Bank','credit','USD',-146800,'2026-11-12T08:00:00Z');",
 ];

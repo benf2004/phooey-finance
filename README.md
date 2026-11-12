@@ -61,7 +61,7 @@ The production environment uses the same Worker name, `phooey-finance`. `npm run
 
 1. Add a manual account or connect a SimpleFIN setup token in Settings.
 2. Classify connected account types in Accounts. SimpleFIN does not provide reliable account types, so new accounts start as **Other** and are excluded from cash-on-hand until classified.
-3. Review transactions and categories; choose tax treatments for business income and expenses.
+3. Create your categories; new installations start with none. Choose tax treatments for business income and expenses, then categorize transactions.
 4. Add matching rules for future imports/syncs. Preview and explicitly apply rules to existing eligible transactions.
 5. Configure the annual tax plan and state rates. Save the plan to update the dashboard. Record estimated payments separately; associating a payment with a bank transaction is supported by the API/MCP.
 6. Connect an MCP client using the URL shown in Settings, or create a scoped personal access token.

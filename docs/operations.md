@@ -10,7 +10,7 @@ Browser CSV downloads stream directly; MCP exports run as jobs and are retained 
 
 Settings → Full backup downloads accounts, transactions, splits, categories, rules, balance history, audit records and tax plans/payments. Tokens, sessions, bank credentials and encryption keys are excluded. Incomplete imports must finish or resume before backup, preventing partial imports from becoming irrecoverable after restore.
 
-Restore the JSON into a fresh, disconnected deployment with no transactions or active jobs. Default categories are replaced. Validation and insertion are atomic: failure leaves the ledger unchanged. Reconnect SimpleFIN and authorize MCP clients afterward. Do not reconnect a bank until restore completes.
+Restore the JSON into a fresh, disconnected deployment with no transactions or active jobs. Any existing categories are replaced. Validation and insertion are atomic: failure leaves the ledger unchanged. Reconnect SimpleFIN and authorize MCP clients afterward. Do not reconnect a bank until restore completes.
 
 ## Larger SQL backups
 
@@ -28,7 +28,7 @@ Create a **new** D1 database and configure its ID in a separate deployment. Appl
 npx wrangler d1 execute phooey-finance --remote --env production --file .private/finance.sql
 ```
 
-This command must target the new database, never the original populated database. The generated file removes seeded categories, inserts the backed-up ordinary table data and rebuilds the full-text index. It does not restore active jobs, bank connections, or MCP grants; reconnect those afterward. Validate account counts, balances, ledger totals and saved tax plans before switching traffic.
+This command must target the new database, never the original populated database. The generated file clears existing categories, inserts the backed-up ordinary table data and rebuilds the full-text index. It does not restore active jobs, bank connections, or MCP grants; reconnect those afterward. Validate account counts, balances, ledger totals and saved tax plans before switching traffic.
 
 A running D1 export blocks other database requests. The script explicitly selects ordinary tables because full database export does not support FTS virtual tables. See [D1 import/export guidance](https://developers.cloudflare.com/d1/best-practices/import-export-data/). D1 [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) is another whole-database recovery option; verify the target timestamp before applying it.
 

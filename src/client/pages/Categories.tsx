@@ -65,6 +65,13 @@ export default function Categories() {
               </tr>
             </thead>
             <tbody>
+              {!categories.length && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No categories. Add one to get started.
+                  </td>
+                </tr>
+              )}
               {categories.map((c) => (
                 <tr key={c.id}>
                   <td>
