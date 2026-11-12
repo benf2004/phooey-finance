@@ -50,6 +50,21 @@ it("upgrades existing bank connections without deleting ledger data or selecting
       (await db.prepare("SELECT COUNT(*) AS count FROM transactions").first())
         ?.count,
     ).toBe(1);
+    await db.exec(
+      (
+        await readFile(
+          "migrations/0006_selected_account_visibility.sql",
+          "utf8",
+        )
+      ).replaceAll("\n", " "),
+    );
+    expect(
+      (await db.prepare("SELECT archived FROM accounts").first())?.archived,
+    ).toBe(1);
+    expect(
+      (await db.prepare("SELECT COUNT(*) AS count FROM transactions").first())
+        ?.count,
+    ).toBe(1);
   } finally {
     await mf.dispose();
   }

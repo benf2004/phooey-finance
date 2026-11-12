@@ -400,3 +400,136 @@ it("exposes reset only to the signed-in admin and validates typed confirmation",
   ).toBe(0);
   expect((await post("/sync", {})).status).toBe(400);
 });
+
+async function get(path: string) {
+  return mf.dispatchFetch("http://localhost/api" + path, {
+    headers: { Cookie: cookie },
+  });
+}
+async function removeAccount(
+  accountId: string,
+  confirmation = "DELETE ACCOUNT",
+) {
+  return mf.dispatchFetch(
+    "http://localhost/api/accounts/" + encodeURIComponent(accountId),
+    {
+      method: "DELETE",
+      headers: {
+        Cookie: cookie,
+        Origin: "http://localhost",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ confirmation }),
+    },
+  );
+}
+it("hides unselected accounts and their history across lists, totals, and exports", async () => {
+  await connect();
+  await selection(["bank", "personal"]);
+  await finish(await queue());
+  const manual = await post("/accounts", { name: "Manual" });
+  expect(manual.status).toBe(200);
+  const personalTx = await db
+    .prepare("SELECT id FROM transactions WHERE account_id='sf:personal'")
+    .first<{ id: string }>();
+  await selection(["bank"]);
+  const accounts = (await (await get("/accounts")).json()) as {
+    id: string;
+    name: string;
+  }[];
+  expect(accounts.map((a) => a.name).sort()).toEqual(["Checking", "Manual"]);
+  expect(await (await get("/transactions")).json()).toMatchObject({ total: 1 });
+  expect((await get("/transactions/" + personalTx!.id)).status).toBe(404);
+  expect(
+    await (await get("/report?from=2026-01-01&to=2026-12-31")).json(),
+  ).toMatchObject({ groups: { USD: { expenses: 1000 } } });
+  expect(await (await get("/export")).text()).not.toContain(
+    "Personal purchase",
+  );
+  expect(
+    (await db.prepare("SELECT COUNT(*) AS count FROM transactions").first())
+      ?.count,
+  ).toBe(2);
+  const state = (await (await get("/sync")).json()) as {
+    connection: { importedAccounts: { id: string }[] };
+  };
+  expect(state.connection.importedAccounts).toHaveLength(2);
+  await selection(["bank", "personal"]);
+  expect(await (await get("/transactions")).json()).toMatchObject({ total: 2 });
+  expect((await get("/transactions/" + personalTx!.id)).status).toBe(200);
+});
+it("deletes one bank account, clears its dependencies, and prevents queued sync from restoring it", async () => {
+  await connect();
+  await selection(["bank", "personal"]);
+  await finish(await queue());
+  await db.exec(
+    "INSERT INTO categories(id,name,type) VALUES('test-category','Test','expense'); INSERT INTO rules(id,name,pattern,category_id,account_id) VALUES('personal-rule','Personal','purchase','test-category','sf:personal'); INSERT INTO tax_payments(id,year,jurisdiction,paid_on,amount,transaction_id) SELECT 'payment',2026,'federal','2026-10-01',2000,id FROM transactions WHERE account_id='sf:personal'; INSERT INTO splits(id,transaction_id,amount,type) SELECT 'split',id,-2000,'expense' FROM transactions WHERE account_id='sf:personal'; UPDATE transactions SET transfer_id='pair';",
+  );
+  const staleJob = await queue();
+  await consume(staleJob);
+  expect((await removeAccount("sf:personal", "wrong")).status).toBe(400);
+  expect((await removeAccount("sf:personal")).status).toBe(200);
+  await consume(staleJob);
+  expect((await db.prepare("SELECT id FROM accounts").all()).results).toEqual([
+    { id: "sf:bank" },
+  ]);
+  expect(
+    (await db.prepare("SELECT transfer_id FROM transactions").first())
+      ?.transfer_id,
+  ).toBeNull();
+  expect(
+    (await db.prepare("SELECT transaction_id FROM tax_payments").first())
+      ?.transaction_id,
+  ).toBeNull();
+  for (const table of ["splits", "rules"])
+    expect(
+      (await db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first())
+        ?.count,
+    ).toBe(0);
+  expect(
+    JSON.parse(
+      (await db
+        .prepare("SELECT selected_accounts FROM connections")
+        .first<{ selected_accounts: string }>())!.selected_accounts,
+    ),
+  ).toEqual(["bank"]);
+  await finish(await queue());
+  expect((await db.prepare("SELECT id FROM accounts").all()).results).toEqual([
+    { id: "sf:bank" },
+  ]);
+  expect((await removeAccount("sf:bank")).status).toBe(200);
+  expect((await post("/sync", {})).status).toBe(400);
+});
+it("deletes manual accounts and requires an authenticated request", async () => {
+  const created = (await (
+    await post("/accounts", { name: "Manual" })
+  ).json()) as { id: string };
+  await post("/transactions", {
+    account_id: created.id,
+    posted: "2026-10-01",
+    amount: -100,
+    type: "expense",
+    description: "Manual purchase",
+  });
+  const anonymous = await mf.dispatchFetch(
+    "http://localhost/api/accounts/" + created.id,
+    {
+      method: "DELETE",
+      headers: {
+        Origin: "http://localhost",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ confirmation: "DELETE ACCOUNT" }),
+    },
+  );
+  expect(anonymous.status).toBe(401);
+  expect((await removeAccount(created.id)).status).toBe(200);
+  expect(
+    (await db.prepare("SELECT COUNT(*) AS count FROM transactions").first())
+      ?.count,
+  ).toBe(0);
+  expect(
+    (await db.prepare("SELECT COUNT(*) AS count FROM accounts").first())?.count,
+  ).toBe(0);
+  expect((await removeAccount(created.id)).status).toBe(404);
+});

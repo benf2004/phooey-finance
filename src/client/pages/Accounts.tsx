@@ -1,3 +1,4 @@
+import { DeleteAccountButton } from "./DeleteAccount";
 import { useState } from "react";
 import {
   Plus,
@@ -82,6 +83,7 @@ export default function Accounts() {
                   >
                     <Pencil size={15} />
                   </button>
+                  <DeleteAccountButton account={a} />
                   {a.source === "simplefin" && (
                     <Button variant="ghost" onClick={() => setHistory(a)}>
                       History

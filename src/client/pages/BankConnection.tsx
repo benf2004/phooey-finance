@@ -1,3 +1,5 @@
+import { DeleteAccountButton } from "./DeleteAccount";
+import type { Account } from "../../shared/models";
 import { useEffect, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useWorkspace } from "../context";
@@ -9,6 +11,7 @@ export type BankConnectionState = {
   last_error: string | null;
   generation: string;
   selectionReady: boolean;
+  importedAccounts: Account[];
   selectedAccounts: string[];
   accounts: {
     id: string;
@@ -22,7 +25,8 @@ export function BankConnection({
 }: {
   connection: BankConnectionState | null | undefined;
 }) {
-  const { accounts: imported, refresh, notify } = useWorkspace();
+  const { refresh, notify } = useWorkspace();
+  const imported = connection?.importedAccounts ?? [];
   const [token, setToken] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [removeUnselected, setRemoveUnselected] = useState(false);
@@ -167,28 +171,40 @@ export function BankConnection({
                     (a) => a.id === account.id,
                   );
                   return (
-                    <label className="bank-account-choice" key={account.id}>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(account.id)}
-                        disabled={!available && !selected.includes(account.id)}
-                        onChange={(e) =>
-                          setSelected((current) =>
-                            e.target.checked
-                              ? [...current, account.id]
-                              : current.filter((id) => id !== account.id),
-                          )
-                        }
-                      />
-                      <span>
-                        <strong>{account.name}</strong>
-                        <small>
-                          {account.institution || account.currency}
-                          {!available && " · Unavailable"}
-                        </small>
-                      </span>
-                      <small>{account.currency}</small>
-                    </label>
+                    <div className="bank-account-choice" key={account.id}>
+                      <label className="bank-account-label">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(account.id)}
+                          disabled={
+                            !available && !selected.includes(account.id)
+                          }
+                          onChange={(e) =>
+                            setSelected((current) =>
+                              e.target.checked
+                                ? [...current, account.id]
+                                : current.filter((id) => id !== account.id),
+                            )
+                          }
+                        />
+                        <span>
+                          <strong>{account.name}</strong>
+                          <small>
+                            {account.institution || account.currency}
+                            {!available && " · Unavailable"}
+                          </small>
+                        </span>
+                        <small>{account.currency}</small>
+                      </label>
+                      {imported.find((a) => a.provider_id === account.id) && (
+                        <DeleteAccountButton
+                          account={imported.find(
+                            (a) => a.provider_id === account.id,
+                          )!}
+                          disabled={busy}
+                        />
+                      )}
+                    </div>
                   );
                 })}
                 {!choices.length && (

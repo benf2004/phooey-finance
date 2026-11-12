@@ -1687,7 +1687,7 @@ td small {
 .bank-account-choice + .bank-account-choice {
   border-top: 1px solid var(--line);
 }
-.bank-account-choice > span {
+.bank-account-label > span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1716,4 +1716,13 @@ td small {
 }
 .bank-account-heading h3 {
   margin: 0;
+}
+
+.bank-account-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
 }

@@ -88,6 +88,7 @@ export async function connectSimplefin(env: AppEnv, token: string) {
     env.DB.prepare(
       "INSERT INTO connections(id,secret,generation,status) VALUES('simplefin',?,?,'selecting') ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,generation=excluded.generation,status='selecting',last_error=NULL,last_success=NULL,resume_from=NULL,selected_accounts='[]',available_accounts='[]',selection_ready=0",
     ).bind(await encrypt(env, access), id()),
+    env.DB.prepare("UPDATE accounts SET archived=1 WHERE source='simplefin'"),
   ]);
   return discoverSimplefinAccounts(env);
 }
@@ -268,6 +269,9 @@ export async function simplefinState(env: AppEnv) {
     selectedAccounts: JSON.parse(selected_accounts) as string[],
     accounts: JSON.parse(available_accounts) as AccountChoice[],
     selectionReady: !!selection_ready,
+    importedAccounts: (await new Ledger(env.DB).accounts(true)).filter(
+      (a) => a.source === "simplefin",
+    ),
   };
 }
 export async function discoverSimplefinAccounts(env: AppEnv) {
@@ -345,6 +349,11 @@ export async function selectSimplefinAccounts(env: AppEnv, input: unknown) {
       selected.length ? "connected" : "paused",
     ),
   ];
+  statements.push(
+    env.DB.prepare(
+      "UPDATE accounts SET archived=CASE WHEN provider_id IN (SELECT value FROM json_each(?)) THEN 0 ELSE 1 END WHERE source='simplefin'",
+    ).bind(selectedJSON),
+  );
   if (removeUnselected) {
     const removedAccounts =
       "SELECT id FROM accounts WHERE source='simplefin' AND provider_id NOT IN (SELECT value FROM json_each(?))";
@@ -491,7 +500,7 @@ export async function syncWindow(
         "";
       statements.push(
         env.DB.prepare(
-          "INSERT INTO accounts(id,name,institution,kind,currency,balance,balance_at,source,provider_id) VALUES(?,?,?,'other',?,?,?,'simplefin',?) ON CONFLICT(id) DO UPDATE SET balance=CASE WHEN excluded.balance_at>=accounts.balance_at THEN excluded.balance ELSE accounts.balance END,balance_at=MAX(accounts.balance_at,excluded.balance_at),institution=excluded.institution",
+          "INSERT INTO accounts(id,name,institution,kind,currency,balance,balance_at,source,provider_id) VALUES(?,?,?,'other',?,?,?,'simplefin',?) ON CONFLICT(id) DO UPDATE SET archived=0,balance=CASE WHEN excluded.balance_at>=accounts.balance_at THEN excluded.balance ELSE accounts.balance END,balance_at=MAX(accounts.balance_at,excluded.balance_at),institution=excluded.institution",
         ).bind(
           accountId,
           account.name,

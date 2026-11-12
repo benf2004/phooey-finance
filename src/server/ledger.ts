@@ -38,10 +38,12 @@ export class Ledger {
     public db: D1Database,
     public actor = "admin",
   ) {}
-  async accounts() {
+  async accounts(includeHidden = false) {
     return (
       await this.db
-        .prepare("SELECT * FROM accounts ORDER BY archived,name")
+        .prepare(
+          `SELECT * FROM accounts ${includeHidden ? "" : "WHERE archived=0"} ORDER BY archived,name`,
+        )
         .all<Account>()
     ).results;
   }
@@ -192,7 +194,10 @@ export class Ledger {
   }
   where(input: unknown, alias = "t") {
     const f = filterSchema.parse(input);
-    const clauses = [`${alias}.deleted=0`];
+    const clauses = [
+      `${alias}.deleted=0`,
+      `${alias}.account_id IN (SELECT id FROM accounts WHERE archived=0)`,
+    ];
     const args: (string | number)[] = [];
     const add = (sql: string, value: string | number) => {
       clauses.push(sql);
@@ -262,7 +267,7 @@ export class Ledger {
   async transaction(key: string) {
     const tx = await this.db
       .prepare(
-        "SELECT t.*,a.name account_name,a.currency,c.name category_name FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE t.id=? AND t.deleted=0",
+        "SELECT t.*,a.name account_name,a.currency,c.name category_name FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE t.id=? AND t.deleted=0 AND a.archived=0",
       )
       .bind(key)
       .first<Transaction>();
@@ -672,7 +677,7 @@ export class Ledger {
     const rows = (
       await this.db
         .prepare(
-          `SELECT SUM(e.amount) amount,e.type,e.currency,substr(e.posted,1,7) posted,e.category_id,c.name category_name,c.tax_treatment FROM ledger_entries e LEFT JOIN categories c ON c.id=e.category_id WHERE e.deleted=0 AND e.pending=0 AND e.posted>=? AND e.posted<=? GROUP BY e.currency,substr(e.posted,1,7),e.type,e.category_id ORDER BY posted`,
+          `SELECT SUM(e.amount) amount,e.type,e.currency,substr(e.posted,1,7) posted,e.category_id,c.name category_name,c.tax_treatment FROM ledger_entries e LEFT JOIN categories c ON c.id=e.category_id WHERE e.deleted=0 AND e.pending=0 AND e.account_id IN (SELECT id FROM accounts WHERE archived=0) AND e.posted>=? AND e.posted<=? GROUP BY e.currency,substr(e.posted,1,7),e.type,e.category_id ORDER BY posted`,
         )
         .bind(from, to)
         .all<{

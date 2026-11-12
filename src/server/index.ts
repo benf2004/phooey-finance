@@ -1,3 +1,4 @@
+import { deleteAccount } from "./accounts";
 import { resetData, cleanupFiles } from "./reset";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -150,6 +151,11 @@ app.post("/api/accounts", async (c) =>
       ),
   ),
 );
+app.delete("/api/accounts/:id", async (c) =>
+  c.json(
+    await deleteAccount(c.env, c.req.param("id"), await readJSON(c.req.raw)),
+  ),
+);
 app.put("/api/accounts/:id", async (c) =>
   c.json(
     await c
@@ -165,7 +171,7 @@ app.get("/api/accounts/:id/history", async (c) =>
   c.json(
     (
       await c.env.DB.prepare(
-        "SELECT balance,captured_at FROM balance_snapshots WHERE account_id=? ORDER BY captured_at DESC LIMIT 365",
+        "SELECT balance,captured_at FROM balance_snapshots WHERE account_id=? AND account_id IN (SELECT id FROM accounts WHERE archived=0) ORDER BY captured_at DESC LIMIT 365",
       )
         .bind(c.req.param("id"))
         .all()

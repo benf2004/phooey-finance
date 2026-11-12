@@ -62,6 +62,9 @@ export async function resetData(
     );
   } else {
     statements.push(
+      env.DB.prepare("UPDATE accounts SET archived=1 WHERE source='simplefin'"),
+    );
+    statements.push(
       env.DB.prepare(
         "UPDATE connections SET selected_accounts='[]',selection_ready=0,status='selecting',generation=?,last_success=NULL,resume_from=NULL,last_error=NULL",
       ).bind(id()),
