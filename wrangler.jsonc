@@ -1,0 +1,100 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "phooey-finance",
+  "workers_dev": true,
+  "preview_urls": false,
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-11-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/oauth/*", "/.well-known/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "phooey-finance",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "phooey-finance-files",
+    },
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "phooey-finance-jobs",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "phooey-finance-jobs",
+        "max_batch_size": 1,
+        "max_retries": 3,
+      },
+    ],
+  },
+  "triggers": {
+    "crons": ["17 6,18 * * *"],
+  },
+  "vars": {
+    "APP_NAME": "Phooey Finance",
+    "SOURCE_URL": "https://github.com/benf2004/phooey-finance",
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false,
+      "head_sampling_rate": 0.1,
+    },
+  },
+  "limits": {
+    "cpu_ms": 30000,
+  },
+  "env": {
+    "production": {
+      "name": "phooey-finance",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "phooey-finance",
+          "database_id": "a042ef56-cb1a-402a-b55b-375b31c08688",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "phooey-finance-files",
+        },
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "JOBS",
+            "queue": "phooey-finance-jobs",
+          },
+        ],
+        "consumers": [
+          {
+            "queue": "phooey-finance-jobs",
+            "max_batch_size": 1,
+            "max_retries": 3,
+          },
+        ],
+      },
+      "vars": {
+        "APP_NAME": "Phooey Finance",
+        "SOURCE_URL": "https://github.com/benf2004/phooey-finance",
+      },
+    },
+  },
+}
