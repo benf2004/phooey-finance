@@ -65,7 +65,8 @@ export async function connectSimplefin(env: AppEnv, token: string) {
   );
   const response = await fetch(url, {
     method: "POST",
-    redirect: "error",
+    // Workers supports manual redirects; response.ok rejects 3xx without forwarding credentials.
+    redirect: "manual",
     signal: AbortSignal.timeout(20000),
   });
   assert(
@@ -218,7 +219,8 @@ export async function syncWindow(
     }).toString();
     const response = await fetch(url, {
       headers: { Authorization: auth },
-      redirect: "error",
+      // Workers supports manual redirects; response.ok rejects 3xx without forwarding credentials.
+      redirect: "manual",
       signal: AbortSignal.timeout(30000),
     });
     if (response.status === 402 || response.status === 403) {
