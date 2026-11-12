@@ -86,21 +86,29 @@ export async function connectSimplefin(env: AppEnv, token: string) {
       "UPDATE jobs SET status='cancelled' WHERE kind='sync' AND status IN ('queued','running')",
     ),
     env.DB.prepare(
-      "INSERT INTO connections(id,secret,generation) VALUES('simplefin',?,?) ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,generation=excluded.generation,status='connected',last_error=NULL,last_success=NULL,resume_from=NULL",
+      "INSERT INTO connections(id,secret,generation,status) VALUES('simplefin',?,?,'selecting') ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,generation=excluded.generation,status='selecting',last_error=NULL,last_success=NULL,resume_from=NULL,selected_accounts='[]',available_accounts='[]',selection_ready=0",
     ).bind(await encrypt(env, access), id()),
   ]);
-  return requestSync(env);
+  return discoverSimplefinAccounts(env);
 }
 export async function requestSync(env: AppEnv, start?: string) {
   const connection = await env.DB.prepare(
-    "SELECT id,last_success,resume_from,generation FROM connections WHERE id='simplefin'",
+    "SELECT id,last_success,resume_from,generation,selected_accounts,selection_ready FROM connections WHERE id='simplefin'",
   ).first<{
     id: string;
     last_success: string | null;
     resume_from: number | null;
     generation: string;
+    selected_accounts: string;
+    selection_ready: number;
   }>();
   assert(connection, 400, "Connect SimpleFIN first");
+  assert(
+    connection.selection_ready &&
+      JSON.parse(connection.selected_accounts).length,
+    400,
+    "Choose accounts to import in Settings first",
+  );
   const active = await env.DB.prepare(
     "SELECT id FROM jobs WHERE kind='sync' AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1",
   ).first<{ id: string }>();
@@ -116,23 +124,28 @@ export async function requestSync(env: AppEnv, start?: string) {
       (connection.last_success
         ? Math.floor(new Date(connection.last_success).getTime() / 1000) -
           5 * 86400
-        : end - 90 * 86400));
+        : end - 45 * 86400));
   assert(
     startDate < end && startDate >= 0,
     400,
     "Backfill date must be in the past",
   );
   const jobId = id();
-  await env.DB.prepare("INSERT INTO jobs(id,kind,payload) VALUES(?,'sync',?)")
-    .bind(
+  const guard = id();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO write_guards VALUES(?,(SELECT COUNT(*)=1 FROM connections WHERE id='simplefin' AND generation=? AND selection_ready=1 AND json_array_length(selected_accounts)>0))",
+    ).bind(guard, connection.generation),
+    env.DB.prepare("INSERT INTO jobs(id,kind,payload) VALUES(?,'sync',?)").bind(
       jobId,
       JSON.stringify({
         cursor: startDate,
         end,
         generation: connection.generation,
       }),
-    )
-    .run();
+    ),
+    env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+  ]);
   await env.JOBS.send({ jobId });
   return { jobId };
 }
@@ -174,6 +187,204 @@ const accountSetSchema = z.object({
     }),
   ),
 });
+type AccountChoice = {
+  id: string;
+  name: string;
+  institution: string;
+  currency: string;
+};
+function providerMessages(data: z.infer<typeof accountSetSchema>) {
+  return [
+    ...new Set([
+      ...(data.errors ?? []),
+      ...(data.errlist ?? []).map((error) => {
+        if (typeof error === "string") return error;
+        if (
+          error &&
+          typeof error === "object" &&
+          "msg" in error &&
+          typeof error.msg === "string"
+        )
+          return error.msg;
+        return JSON.stringify(error);
+      }),
+    ]),
+  ];
+}
+async function fetchSimplefinAccounts(
+  env: AppEnv,
+  connection: { secret: string; generation: string },
+  params: URLSearchParams,
+) {
+  await rateLimit(env.DB, "simplefin-requests", 20, 86400);
+  const url = validateSimplefinURL(await decrypt(env, connection.secret));
+  const auth =
+    "Basic " +
+    btoa(
+      decodeURIComponent(url.username) + ":" + decodeURIComponent(url.password),
+    );
+  url.username = "";
+  url.password = "";
+  url.pathname = url.pathname.replace(/\/$/, "") + "/accounts";
+  url.search = params.toString();
+  const response = await fetch(url, {
+    headers: { Authorization: auth },
+    redirect: "manual",
+    signal: AbortSignal.timeout(30000),
+  });
+  if (response.status === 402 || response.status === 403) {
+    const message =
+      response.status === 402
+        ? "SimpleFIN subscription needs attention"
+        : "Connection revoked. Reconnect SimpleFIN.";
+    await env.DB.prepare(
+      "UPDATE connections SET status='attention',last_error=? WHERE id='simplefin' AND generation=?",
+    )
+      .bind(message, connection.generation)
+      .run();
+    throw new AppError(400, message);
+  }
+  assert(response.ok, 502, "SimpleFIN is temporarily unavailable");
+  return accountSetSchema.parse(JSON.parse(await boundedText(response)));
+}
+export async function simplefinState(env: AppEnv) {
+  const connection = await env.DB.prepare(
+    "SELECT id,last_success,last_error,status,generation,selected_accounts,available_accounts,selection_ready FROM connections WHERE id='simplefin'",
+  ).first<{
+    id: string;
+    last_success: string | null;
+    last_error: string | null;
+    status: string;
+    generation: string;
+    selected_accounts: string;
+    available_accounts: string;
+    selection_ready: number;
+  }>();
+  if (!connection) return null;
+  const { selected_accounts, available_accounts, selection_ready, ...state } =
+    connection;
+  return {
+    ...state,
+    selectedAccounts: JSON.parse(selected_accounts) as string[],
+    accounts: JSON.parse(available_accounts) as AccountChoice[],
+    selectionReady: !!selection_ready,
+  };
+}
+export async function discoverSimplefinAccounts(env: AppEnv) {
+  const connection = await env.DB.prepare(
+    "SELECT secret,generation FROM connections WHERE id='simplefin'",
+  ).first<{ secret: string; generation: string }>();
+  assert(connection, 400, "Connect SimpleFIN first");
+  const data = await fetchSimplefinAccounts(
+    env,
+    connection,
+    new URLSearchParams({ version: "2", "balances-only": "1" }),
+  );
+  // Cache names only: discovery never persists balances or transactions to the ledger.
+  const accounts: AccountChoice[] = data.accounts.map((account) => ({
+    id: account.id,
+    name: account.name,
+    currency: account.currency,
+    institution:
+      account.org?.name ??
+      data.connections?.find((c) => c.conn_id === account.conn_id)?.org_name ??
+      "",
+  }));
+  const problems = providerMessages(data);
+  const result = await env.DB.prepare(
+    "UPDATE connections SET available_accounts=?,last_error=? WHERE id='simplefin' AND generation=?",
+  )
+    .bind(
+      JSON.stringify(accounts),
+      problems.length ? problems.join("\n").slice(0, 4000) : null,
+      connection.generation,
+    )
+    .run();
+  assert(
+    result.meta.changes,
+    409,
+    "Connection changed. Refresh and try again.",
+  );
+  return simplefinState(env);
+}
+export async function selectSimplefinAccounts(env: AppEnv, input: unknown) {
+  const { generation, accountIds, removeUnselected } = z
+    .object({
+      generation: z.string().min(1),
+      accountIds: z.array(z.string().min(1)).max(200),
+      removeUnselected: z.boolean().default(false),
+    })
+    .parse(input);
+  const connection = await simplefinState(env);
+  assert(
+    connection && connection.generation === generation,
+    409,
+    "Connection changed. Refresh and try again.",
+  );
+  const selected = [...new Set(accountIds)];
+  assert(
+    selected.every((id) => connection.accounts.some((a) => a.id === id)),
+    400,
+    "Refresh the account list and choose available accounts",
+  );
+  const selectedJSON = JSON.stringify(selected);
+  const guard = id();
+  const nextGeneration = id();
+  const statements = [
+    env.DB.prepare(
+      "INSERT INTO write_guards VALUES(?,(SELECT COUNT(*)=1 FROM connections WHERE id='simplefin' AND generation=?))",
+    ).bind(guard, generation),
+    env.DB.prepare(
+      "UPDATE jobs SET status='cancelled',lease_until=0 WHERE kind='sync' AND status IN ('queued','running')",
+    ),
+    env.DB.prepare(
+      "UPDATE connections SET selected_accounts=?,selection_ready=1,generation=?,last_success=NULL,resume_from=NULL,last_error=NULL,status=? WHERE id='simplefin'",
+    ).bind(
+      selectedJSON,
+      nextGeneration,
+      selected.length ? "connected" : "paused",
+    ),
+  ];
+  if (removeUnselected) {
+    const removedAccounts =
+      "SELECT id FROM accounts WHERE source='simplefin' AND provider_id NOT IN (SELECT value FROM json_each(?))";
+    const removedTransactions = `SELECT id FROM transactions WHERE account_id IN (${removedAccounts})`;
+    // Keep recorded tax payments, but unlink removed bank transactions.
+    statements.push(
+      env.DB.prepare(
+        `UPDATE tax_payments SET transaction_id=NULL WHERE transaction_id IN (${removedTransactions})`,
+      ).bind(selectedJSON),
+      env.DB.prepare(
+        `UPDATE transactions SET transfer_id=NULL,revision=revision+1 WHERE transfer_id IN (SELECT transfer_id FROM transactions WHERE account_id IN (${removedAccounts}))`,
+      ).bind(selectedJSON),
+      env.DB.prepare(
+        `DELETE FROM transactions WHERE account_id IN (${removedAccounts})`,
+      ).bind(selectedJSON),
+      env.DB.prepare(
+        `DELETE FROM rules WHERE account_id IN (${removedAccounts})`,
+      ).bind(selectedJSON),
+      env.DB.prepare(
+        `DELETE FROM balance_snapshots WHERE account_id IN (${removedAccounts})`,
+      ).bind(selectedJSON),
+      env.DB.prepare(
+        `DELETE FROM accounts WHERE id IN (${removedAccounts})`,
+      ).bind(selectedJSON),
+    );
+  }
+  statements.push(
+    new Ledger(env.DB).auditStatement(
+      "sync.accounts",
+      "simplefin",
+      { accountIds: connection.selectedAccounts },
+      { accountIds: selected, removeUnselected },
+    ),
+  );
+  statements.push(
+    env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+  );
+  await env.DB.batch(statements);
+  return simplefinState(env);
+}
 type SyncPayload = {
   generation: string;
   cursor: number;
@@ -189,65 +400,42 @@ export async function syncWindow(
   payload: SyncPayload,
 ) {
   const connection = await env.DB.prepare(
-    "SELECT secret,generation FROM connections WHERE id='simplefin'",
-  ).first<{ secret: string; generation: string }>();
-  if (!connection || connection.generation !== payload.generation) {
+    "SELECT secret,generation,selected_accounts,selection_ready FROM connections WHERE id='simplefin'",
+  ).first<{
+    secret: string;
+    generation: string;
+    selected_accounts: string;
+    selection_ready: number;
+  }>();
+  if (
+    !connection ||
+    connection.generation !== payload.generation ||
+    !connection.selection_ready ||
+    !JSON.parse(connection.selected_accounts).length
+  ) {
     await env.DB.prepare("UPDATE jobs SET status='cancelled' WHERE id=?")
       .bind(jobId)
       .run();
     return;
   }
-  const windowEnd = Math.min(payload.end, payload.cursor + 90 * 86400);
+  const windowEnd = Math.min(payload.end, payload.cursor + 45 * 86400);
   if (!payload.stageKey) {
-    await rateLimit(env.DB, "simplefin-requests", 20, 86400);
-    const url = validateSimplefinURL(await decrypt(env, connection.secret));
-    const auth =
-      "Basic " +
-      btoa(
-        decodeURIComponent(url.username) +
-          ":" +
-          decodeURIComponent(url.password),
-      );
-    url.username = "";
-    url.password = "";
-    url.pathname = url.pathname.replace(/\/$/, "") + "/accounts";
-    url.search = new URLSearchParams({
+    const params = new URLSearchParams({
       version: "2",
       "start-date": String(payload.cursor),
       "end-date": String(windowEnd),
       pending: "1",
-    }).toString();
-    const response = await fetch(url, {
-      headers: { Authorization: auth },
-      // Workers supports manual redirects; response.ok rejects 3xx without forwarding credentials.
-      redirect: "manual",
-      signal: AbortSignal.timeout(30000),
     });
-    if (response.status === 402 || response.status === 403) {
-      await env.DB.prepare(
-        "UPDATE connections SET status='attention',last_error=? WHERE id='simplefin' AND generation=?",
-      )
-        .bind(
-          response.status === 402
-            ? "SimpleFIN subscription needs attention"
-            : "Connection revoked. Reconnect SimpleFIN.",
-          payload.generation,
-        )
-        .run();
-      throw new AppError(400, "SimpleFIN connection needs attention");
-    }
-    assert(response.ok, 502, "SimpleFIN is temporarily unavailable");
-    const data = accountSetSchema.parse(
-      JSON.parse(await boundedText(response)),
-    );
+    const selected = new Set<string>(JSON.parse(connection.selected_accounts));
+    for (const account of selected) params.append("account", account);
+    const data = await fetchSimplefinAccounts(env, connection, params);
+    // Enforce selection even if the provider ignores account filters.
+    data.accounts = data.accounts.filter((account) => selected.has(account.id));
     const stageKey = "sync/" + jobId + "/" + payload.cursor;
     await env.FILES.put(stageKey, JSON.stringify(data));
     const problems = [
       ...(payload.problems ?? []),
-      ...(data.errors ?? []),
-      ...(data.errlist ?? []).map((e) =>
-        typeof e === "string" ? e : JSON.stringify(e),
-      ),
+      ...providerMessages(data),
     ].slice(-30);
     const next = {
       ...payload,
@@ -268,6 +456,8 @@ export async function syncWindow(
   const object = await env.FILES.get(payload.stageKey);
   assert(object, 502, "Staged sync data is unavailable; retry synchronization");
   const data = accountSetSchema.parse(await object.json());
+  const selected = new Set<string>(JSON.parse(connection.selected_accounts));
+  data.accounts = data.accounts.filter((account) => selected.has(account.id));
   const ledger = new Ledger(env.DB, "sync");
   const rules = await ledger.rules();
   const categories = await ledger.categories();

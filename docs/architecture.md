@@ -12,7 +12,7 @@ Rules are case-insensitive substring matches, ordered by priority, creation time
 
 ## Sync and jobs
 
-SimpleFIN setup tokens are claimed once on the server. The access URL is encrypted with AES-GCM using a Worker secret. Only the official Bridge hosts are accepted; redirects are rejected. No bank credentials pass through the app. Limits: 20 account fetches per day, four sync requests per hour, 90-day request windows. Scheduled sync overlaps five days to refresh recent transactions; explicit historical backfill uses consecutive windows.
+SimpleFIN setup tokens are claimed once on the server. The access URL is encrypted with AES-GCM using a Worker secret. Only the official Bridge hosts are accepted; redirects are rejected. No bank credentials pass through the app. Limits: 20 account fetches per day, four sync requests per hour, 45-day request windows. Connection setup fetches account names with `balances-only=1` and waits for an explicit selection. Sync requests include only selected account IDs; responses are filtered again before staging and ingestion. New accounts are never added automatically. Changing the selection cancels previous-generation jobs. Scheduled sync overlaps five days to refresh recent transactions; explicit historical backfill uses consecutive windows.
 
 A connection generation prevents an old job or delayed response from changing a replacement connection. Each job has a lease and durable checkpoint. Provider responses are staged before transaction ingestion. Ingestion batches 100 transactions; imports batch 50; exports batch 500. The database commits sync records, progress and final watermark atomically. Replaying imports uses persistent row request keys. A lease collision retries instead of acknowledging unfinished work.
 

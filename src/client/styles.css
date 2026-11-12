@@ -1667,3 +1667,53 @@ td small {
     scroll-behavior: auto !important;
   }
 }
+
+.bank-account-list {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.bank-account-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+.bank-account-choice + .bank-account-choice {
+  border-top: 1px solid var(--line);
+}
+.bank-account-choice > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bank-account-choice strong,
+.bank-account-choice small {
+  display: block;
+}
+.bank-account-choice strong {
+  font-weight: 500;
+}
+.bank-account-list > p {
+  padding: 10px;
+  margin: 0;
+}
+.bank-account-choice:hover {
+  background: var(--surface-soft);
+}
+
+.bank-account-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bank-account-heading h3 {
+  margin: 0;
+}

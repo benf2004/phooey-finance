@@ -224,7 +224,7 @@ export function handleMcp(
     );
     tool(
       "request_sync",
-      "Enqueue a rate-limited bank synchronization. Optional start date requests historical backfill.",
+      "Sync only the bank accounts selected in Settings. Account selection is required. Optional start date requests history in windows of at most 45 days.",
       z.object({ start: dateSchema.optional() }),
       "sync:write",
       (a) => requestSync(env, a.start),

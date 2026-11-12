@@ -1,7 +1,7 @@
+import { DataReset } from "./DataReset";
+import { BankConnection, type BankConnectionState } from "./BankConnection";
 import { useEffect, useState } from "react";
 import {
-  Link2,
-  RefreshCw,
   Download,
   Upload,
   KeyRound,
@@ -25,11 +25,7 @@ import {
 } from "../ui";
 import { scopes, type Scope } from "../../shared/models";
 type Sync = {
-  connection: {
-    status: string;
-    last_success: string | null;
-    last_error: string | null;
-  } | null;
+  connection: BankConnectionState | null;
   jobs: {
     id: string;
     kind: string;
@@ -50,8 +46,6 @@ export default function Settings() {
   const { version, refresh, notify, sourceUrl } = useWorkspace();
   const [tick, setTick] = useState(0),
     [error, setError] = useState<string | null>(null),
-    [setup, setSetup] = useState(""),
-    [start, setStart] = useState(""),
     [busy, setBusy] = useState(false),
     [tokenDialog, setTokenDialog] = useState(false),
     [secret, setSecret] = useState<string | null>(null);
@@ -87,135 +81,7 @@ export default function Settings() {
       <PageHeading title="Settings" />
       <ErrorNotice error={error ?? sync.error ?? tokens.error} />
       <div className="settings-grid">
-        <Panel
-          title="Bank connection"
-          caption="Read-only transaction sync through SimpleFIN."
-          action={<LandmarkIcon />}
-        >
-          <div className="panel-body">
-            <div className="connection-status">
-              <Link2 size={20} className="positive" />
-              <div>
-                <strong>
-                  {sync.data?.connection
-                    ? "SimpleFIN connected"
-                    : "Ready when you are"}
-                </strong>
-                <p>
-                  {sync.data?.connection?.last_success
-                    ? "Last successful sync " +
-                      new Date(
-                        sync.data.connection.last_success,
-                      ).toLocaleString()
-                    : "Connect once. Your transactions update twice a day."}
-                </p>
-              </div>
-            </div>
-            {sync.data?.connection?.last_error && (
-              <ErrorNotice error={sync.data.connection.last_error} />
-            )}
-            <form
-              className="form-stack"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await post("/sync/connect", { token: setup });
-                  setSetup("");
-                }, "Connection saved; first sync queued");
-              }}
-            >
-              <Field
-                label={
-                  sync.data?.connection
-                    ? "Replace connection token"
-                    : "SimpleFIN setup token"
-                }
-                hint="Generate a one-time setup token in your SimpleFIN account."
-              >
-                <input
-                  type="password"
-                  value={setup}
-                  onChange={(e) => setSetup(e.target.value)}
-                  required
-                  autoComplete="off"
-                  placeholder="Paste setup token"
-                />
-              </Field>
-              <div className="actions">
-                <Button busy={busy} disabled={!setup}>
-                  <Link2 size={15} />
-                  Connect SimpleFIN
-                </Button>
-                <a
-                  className="text-link"
-                  href="https://bridge.simplefin.org/simplefin/create"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Get a setup token <ExternalLink size={13} />
-                </a>
-              </div>
-            </form>
-            {sync.data?.connection && (
-              <div className="form-section">
-                <div className="actions">
-                  <Button
-                    variant="secondary"
-                    busy={busy}
-                    onClick={() =>
-                      void run(() => post("/sync", {}), "Sync queued")
-                    }
-                  >
-                    <RefreshCw size={15} />
-                    Sync now
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "Disconnect SimpleFIN? Existing transactions stay in your ledger.",
-                        )
-                      )
-                        void run(
-                          () => post("/sync", {}, "DELETE"),
-                          "Bank disconnected",
-                        );
-                    }}
-                  >
-                    Disconnect
-                  </Button>
-                </div>
-                <div className="field-row" style={{ marginTop: 18 }}>
-                  <Field label="Backfill from">
-                    <input
-                      type="date"
-                      value={start}
-                      onChange={(e) => setStart(e.target.value)}
-                    />
-                  </Field>
-                  <Button
-                    variant="secondary"
-                    style={{ alignSelf: "end" }}
-                    disabled={!start || busy}
-                    onClick={() =>
-                      void run(
-                        () => post("/sync", { start }),
-                        "Backfill queued",
-                      )
-                    }
-                  >
-                    Request history
-                  </Button>
-                </div>
-                <p className="inline-note">
-                  History depends on your institution. Requests are spaced
-                  within SimpleFIN’s limits.
-                </p>
-              </div>
-            )}
-          </div>
-        </Panel>
+        <BankConnection connection={sync.data?.connection} />
         <Panel
           title="MCP access"
           action={<Server size={19} className="muted" />}
@@ -366,6 +232,7 @@ export default function Settings() {
             </div>
           </div>
         </Panel>
+        <DataReset />
         <Panel title="Activity" className="full">
           {sync.data?.jobs.length ? (
             <div className="table-scroll">
@@ -460,9 +327,6 @@ export default function Settings() {
       )}
     </>
   );
-}
-function LandmarkIcon() {
-  return <Link2 size={19} className="muted" />;
 }
 function TokenDialog({
   onClose,

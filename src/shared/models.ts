@@ -121,6 +121,7 @@ export type Filters = z.infer<typeof filterSchema>;
 export type Account = z.infer<typeof accountSchema> & {
   id: string;
   source: string;
+  provider_id: string | null;
   balance_at: string | null;
   archived: number;
 };

@@ -1,3 +1,4 @@
+import { resetData, cleanupFiles } from "./reset";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -26,7 +27,15 @@ import {
 import { Ledger } from "./ledger";
 import { dateSchema, scopeSchema, filterSchema } from "../shared/models";
 import { taxState, saveTax, addPayment } from "./taxes";
-import { connectSimplefin, requestSync, syncWindow, claimJob } from "./sync";
+import {
+  connectSimplefin,
+  requestSync,
+  syncWindow,
+  claimJob,
+  simplefinState,
+  discoverSimplefinAccounts,
+  selectSimplefinAccounts,
+} from "./sync";
 import {
   previewImport,
   queueImport,
@@ -120,6 +129,15 @@ app.post("/api/logout", async (c) => {
   c.header("Set-Cookie", sessionCookie("", c.req.raw, 0));
   return c.json({ ok: true });
 });
+app.post("/api/settings/reset", async (c) =>
+  c.json(
+    await resetData(
+      c.env,
+      await readJSON(c.req.raw),
+      await hash(cookieToken(c.req.raw) ?? ""),
+    ),
+  ),
+);
 app.get("/api/accounts", async (c) => c.json(await c.get("ledger").accounts()));
 app.post("/api/accounts", async (c) =>
   c.json(
@@ -320,9 +338,7 @@ app.delete("/api/tax-payments/:id", async (c) => {
 });
 app.get("/api/sync", async (c) =>
   c.json({
-    connection: await c.env.DB.prepare(
-      "SELECT id,last_success,last_error,status FROM connections WHERE id='simplefin'",
-    ).first(),
+    connection: await simplefinState(c.env),
     jobs: (
       await c.env.DB.prepare(
         "SELECT id,kind,status,progress,error,created_at,updated_at FROM jobs ORDER BY created_at DESC LIMIT 20",
@@ -336,6 +352,12 @@ app.post("/api/sync/connect", async (c) => {
     .parse(await readJSON(c.req.raw));
   return c.json(await connectSimplefin(c.env, body.token));
 });
+app.post("/api/sync/discover", async (c) =>
+  c.json(await discoverSimplefinAccounts(c.env)),
+);
+app.post("/api/sync/accounts", async (c) =>
+  c.json(await selectSimplefinAccounts(c.env, await readJSON(c.req.raw))),
+);
 app.post("/api/sync", async (c) => {
   const body = z
     .object({ start: dateSchema.optional() })
@@ -607,7 +629,7 @@ export default {
   },
   async scheduled(_event: ScheduledController, env: AppEnv) {
     const connected = await env.DB.prepare(
-      "SELECT id FROM connections LIMIT 1",
+      "SELECT id FROM connections WHERE selection_ready=1 AND json_array_length(selected_accounts)>0 LIMIT 1",
     ).first();
     const recovery = (
       await env.DB.prepare(
@@ -644,6 +666,8 @@ export default {
         const payload = JSON.parse(job.payload);
         if (job.kind === "sync") await syncWindow(env, job.id, payload);
         else if (job.kind === "import") await importChunk(env, job.id, payload);
+        else if (job.kind === "cleanup")
+          await cleanupFiles(env, job.id, payload);
         else if (job.kind === "export") await exportChunk(env, job.id, payload);
         message.ack();
       } catch (e) {

@@ -1,3 +1,4 @@
+import { resetData, cleanupFiles } from "../src/server/reset";
 import { categoryFixtures } from "./fixtures";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
@@ -16,6 +17,7 @@ import {
 } from "../src/server/files";
 import {
   connectSimplefin,
+  selectSimplefinAccounts,
   claimJob,
   requestSync,
   syncWindow,
@@ -65,6 +67,7 @@ async function run(id: string) {
   const payload = JSON.parse(job!.payload);
   if (job!.kind === "import") await importChunk(env, id, payload);
   if (job!.kind === "export") await exportChunk(env, id, payload);
+  if (job!.kind === "cleanup") await cleanupFiles(env, id, payload);
   if (job!.kind === "sync") await syncWindow(env, id, payload);
   return env.DB.prepare("SELECT * FROM jobs WHERE id=?")
     .bind(id)
@@ -75,7 +78,7 @@ async function account() {
 }
 async function connection(generation = "one") {
   await env.DB.prepare(
-    "INSERT INTO connections(id,secret,generation) VALUES('simplefin',?,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,secret=excluded.secret,last_success=NULL",
+    "INSERT INTO connections(id,secret,generation,selected_accounts,selection_ready) VALUES('simplefin',?,?, '[\"bank1\"]',1) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,secret=excluded.secret,last_success=NULL",
   )
     .bind(
       await encrypt(
@@ -146,7 +149,14 @@ describe("durable jobs and recovery", () => {
       ).text();
       const token = html.match(/aHR0cHM6Ly9[A-Za-z0-9+/=]+/)?.[0];
       expect(token).toBeTruthy();
-      const job = await connectSimplefin(env, token!);
+      const connection = await connectSimplefin(env, token!);
+      expect(connection!.accounts.length).toBeGreaterThan(0);
+      expect((await ledger.accounts()).length).toBe(0);
+      await selectSimplefinAccounts(env, {
+        generation: connection!.generation,
+        accountIds: [connection!.accounts[0].id],
+      });
+      const job = await requestSync(env);
       let complete = false;
       for (let i = 0; i < 15; i++) {
         const result = await run(job.jobId);
@@ -360,5 +370,133 @@ describe("durable jobs and recovery", () => {
     expect(
       (await ledger.report("2026-01-01", "2026-12-31")).groups.USD.expenses,
     ).toBe(100);
+  });
+});
+
+describe("settings data deletion", () => {
+  async function seedResetData() {
+    const accountId = await account();
+    const tx = await ledger.saveTransaction({
+      account_id: accountId,
+      posted: "2026-10-01",
+      amount: -1000,
+      description: "Reset test",
+      type: "expense",
+      splits: [{ amount: -1000, type: "expense", category_id: "office" }],
+    });
+    await addPayment(ledger, {
+      year: 2026,
+      jurisdiction: "federal",
+      paid_on: "2026-10-01",
+      amount: 1000,
+      transaction_id: tx.id,
+    });
+    await connection();
+    await env.DB.exec(
+      "INSERT INTO settings(key,value) VALUES('preferences','{}'); INSERT INTO imports(id,name,fingerprint) VALUES('import','test.csv','fingerprint'); INSERT INTO idempotency(key,fingerprint,response) VALUES('request','fingerprint','{}'); INSERT INTO sessions(token_hash,expires_at,credential_version) VALUES('keep',9999999999,'test'),('other',9999999999,'test'); INSERT INTO access_tokens(id,name,token_hash,scopes,expires_at) VALUES('token','test','test','[]',9999999999);",
+    );
+    await ledger.saveRule({
+      name: "Rule",
+      pattern: "Reset",
+      category_id: "office",
+    });
+    await env.FILES.put("imports/old.csv", "old financial data");
+    return accountId;
+  }
+  it("requires exact confirmation and refuses deletion while a job is running", async () => {
+    await seedResetData();
+    await expect(
+      resetData(env, { scope: "everything", confirmation: "yes" }, "keep"),
+    ).rejects.toMatchObject({ status: 400 });
+    await env.DB.exec(
+      "INSERT INTO jobs(id,kind,status,lease_until) VALUES('active','sync','running',9999999999)",
+    );
+    await expect(
+      resetData(
+        env,
+        { scope: "everything", confirmation: "RESET EVERYTHING" },
+        "keep",
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await ledger.transactions()).total).toBe(1);
+  });
+  it("deletes all transactions, keeps account setup and payments, and pauses sync", async () => {
+    await seedResetData();
+    const reset = await resetData(
+      env,
+      { scope: "transactions", confirmation: "DELETE TRANSACTIONS" },
+      "keep",
+    );
+    for (const table of [
+      "transactions",
+      "splits",
+      "imports",
+      "idempotency",
+      "audit",
+    ])
+      expect(
+        (await env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first())
+          ?.count,
+      ).toBe(0);
+    expect((await ledger.accounts()).length).toBe(1);
+    expect((await ledger.categories()).length).toBe(2);
+    expect((await ledger.rules()).length).toBe(1);
+    expect(
+      (await env.DB.prepare("SELECT transaction_id FROM tax_payments").first())
+        ?.transaction_id,
+    ).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT selection_ready,selected_accounts FROM connections",
+      ).first(),
+    ).toEqual({ selection_ready: 0, selected_accounts: "[]" });
+    await expect(requestSync(env)).rejects.toMatchObject({ status: 400 });
+    await run(reset.jobId);
+    expect(await env.FILES.get("imports/old.csv")).toBeNull();
+  });
+  it("resets app data and MCP access while preserving the current admin login", async () => {
+    await seedResetData();
+    const reset = await resetData(
+      env,
+      { scope: "everything", confirmation: "RESET EVERYTHING" },
+      "keep",
+    );
+    for (const table of [
+      "transactions",
+      "splits",
+      "accounts",
+      "categories",
+      "rules",
+      "balance_snapshots",
+      "tax_payments",
+      "settings",
+      "connections",
+      "access_tokens",
+      "oauth_clients",
+      "oauth_codes",
+      "imports",
+      "idempotency",
+      "audit",
+    ])
+      expect(
+        (await env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first())
+          ?.count,
+      ).toBe(0);
+    expect(
+      (await env.DB.prepare("SELECT token_hash FROM sessions").all()).results,
+    ).toEqual([{ token_hash: "keep" }]);
+    const payload = JSON.parse(
+      (await env.DB.prepare("SELECT payload FROM jobs WHERE id=?")
+        .bind(reset.jobId)
+        .first<{ payload: string }>())!.payload,
+    );
+    while (Date.now() <= payload.cutoff)
+      await new Promise((r) => setTimeout(r, 2));
+    await env.FILES.put("imports/new.csv", "new data after reset");
+    await run(reset.jobId);
+    expect(await env.FILES.get("imports/old.csv")).toBeNull();
+    expect(await (await env.FILES.get("imports/new.csv"))!.text()).toBe(
+      "new data after reset",
+    );
   });
 });

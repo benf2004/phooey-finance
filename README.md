@@ -59,7 +59,7 @@ The production environment uses the same Worker name, `phooey-finance`. `npm run
 
 ## First use
 
-1. Add a manual account or connect a SimpleFIN setup token in Settings.
+1. Add a manual account or connect a SimpleFIN setup token in Settings, then choose which accounts to import. Nothing is selected automatically.
 2. Classify connected account types in Accounts. SimpleFIN does not provide reliable account types, so new accounts start as **Other** and are excluded from cash-on-hand until classified.
 3. Create your categories; new installations start with none. Choose tax treatments for business income and expenses, then categorize transactions.
 4. Add matching rules for future imports/syncs. Preview and explicitly apply rules to existing eligible transactions.
