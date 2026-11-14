@@ -1,0 +1,130 @@
+.transaction-attachments {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.attachment-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.attachment-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+.attachment-heading .button {
+  padding: 5px 10px;
+}
+.attachment-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  max-height: 160px;
+  overflow: auto;
+}
+.attachment-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.attachment-name > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.attachment-name small {
+  display: block;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.attachment-failures {
+  max-height: 140px;
+  overflow: auto;
+  color: var(--red);
+}
+.attachment-failures li {
+  overflow-wrap: anywhere;
+}
+.attachment-preview.modal {
+  width: min(1000px, calc(100vw - 32px));
+}
+.attachment-preview h2 {
+  overflow-wrap: anywhere;
+}
+.attachment-preview-actions {
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+  margin: 0 auto;
+}
+.attachment-image-scroll {
+  max-height: 65vh;
+  overflow: auto;
+}
+.attachment-image-scroll.actual-size .attachment-image {
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+.attachment-pdf {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+@media (max-width: 600px) {
+  .attachment-list .icon-button {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .attachment-heading .button {
+    min-height: 40px;
+  }
+}
+.transactions-table .receipts-column {
+  width: 64px;
+  text-align: center;
+  white-space: nowrap;
+}
+.receipt-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 34px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+.receipt-count:hover {
+  background: var(--green-soft);
+  color: var(--green);
+}

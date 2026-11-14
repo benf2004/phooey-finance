@@ -1,10 +1,15 @@
 import { DataReset } from "./DataReset";
+import { AttachmentSettings } from "./AttachmentSettings";
+import { PasswordSettings } from "./PasswordSettings";
+import { ProfileSettings } from "./ProfileSettings";
+import { AppearanceSettings } from "./AppearanceSettings";
+import ImportDialog from "./ImportDialog";
+import { ThemeSettings } from "./ThemeSettings";
 import { BankConnection, type BankConnectionState } from "./BankConnection";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Download,
   Upload,
-  KeyRound,
   Copy,
   Trash2,
   ExternalLink,
@@ -42,11 +47,28 @@ type Token = {
   expires_at: number;
   last_used_at: string | null;
 };
+const settingsTabs = [
+  { id: "connections", label: "Connections" },
+  { id: "data", label: "Data" },
+  { id: "profile", label: "Profile & password" },
+  { id: "appearance", label: "Appearance" },
+] as const;
+type SettingsTab = (typeof settingsTabs)[number]["id"];
 export default function Settings() {
-  const { version, refresh, notify, sourceUrl } = useWorkspace();
+  const { version, refresh, notify, sourceUrl, navigate } = useWorkspace();
+  const requestedTab = new URLSearchParams(location.search).get("tab");
+  const activeTab = settingsTabs.find((tab) => tab.id === requestedTab)?.id ?? "connections";
+  const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
+  const selectTab = (tab: SettingsTab) => {
+    const url = new URL(location.href);
+    if (tab === "connections") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    navigate(url.pathname + url.search);
+  };
   const [tick, setTick] = useState(0),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
+    [importDialog, setImportDialog] = useState(false),
     [tokenDialog, setTokenDialog] = useState(false),
     [secret, setSecret] = useState<string | null>(null);
   const sync = useAsync(() => api<Sync>("/sync"), [version, tick]);
@@ -80,10 +102,31 @@ export default function Settings() {
     <>
       <PageHeading title="Settings" />
       <ErrorNotice error={error ?? sync.error ?? tokens.error} />
-      <div className="settings-grid">
+      <div className="tabs settings-tabs" role="tablist" aria-label="Settings sections">
+        {settingsTabs.map((tab, index) => (
+          <button key={tab.id} type="button" role="tab"
+            id={`settings-tab-${tab.id}`} aria-controls={`settings-panel-${tab.id}`}
+            aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1}
+            className={activeTab === tab.id ? "active" : ""}
+            ref={(element) => { tabButtons.current[index] = element; }}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => {
+              const next = event.key === "ArrowRight" ? (index + 1) % settingsTabs.length
+                : event.key === "ArrowLeft" ? (index + settingsTabs.length - 1) % settingsTabs.length
+                : event.key === "Home" ? 0 : event.key === "End" ? settingsTabs.length - 1 : null;
+              if (next === null) return;
+              event.preventDefault();
+              selectTab(settingsTabs[next].id);
+              tabButtons.current[next]?.focus();
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <SettingsTabPanel active={activeTab} id="connections">
         <BankConnection connection={sync.data?.connection} />
         <Panel
-          title="MCP access"
+          title="AI & MCP access"
           action={<Server size={19} className="muted" />}
         >
           <div className="panel-body">
@@ -146,11 +189,21 @@ export default function Settings() {
             ))}
           </div>
         </Panel>
+      </SettingsTabPanel>
+      <SettingsTabPanel active={activeTab} id="data">
+        <Panel title="Import transactions">
+          <div className="panel-body">
+            <p>Import a CSV into an account, review the column mapping and preview transactions before adding them.</p>
+            <Button variant="secondary" style={{ marginTop: 20 }} onClick={() => setImportDialog(true)}>
+              <Upload size={15} /> Import CSV
+            </Button>
+          </div>
+        </Panel>
         <Panel title="Export & backup">
           <div className="panel-body">
             <p>
               CSV works with spreadsheets. A JSON backup includes your ledger,
-              categories, rules, and saved tax plans. Credentials are excluded.
+              categories, rules, and saved tax plans. Credentials and attachment files are excluded; download receipts and invoices separately.
             </p>
             <div className="actions" style={{ marginTop: 20 }}>
               <a className="button secondary" href="/api/export">
@@ -195,45 +248,9 @@ export default function Settings() {
             </details>
           </div>
         </Panel>
-        <Panel
-          title="About"
-          action={<ShieldCheck size={19} className="muted" />}
-        >
-          <div className="panel-body">
-            <p>
-              Phooey Finance runs in your Cloudflare account. Administrator
-              credentials are configured as server secrets. No analytics or
-              telemetry are added by the application.
-            </p>
-            <div className="notice" style={{ marginTop: 20 }}>
-              AGPL-3.0 · Free software, without warranty. You may use, modify,
-              and share it under the license terms.
-            </div>
-            <div className="actions" style={{ marginTop: 20 }}>
-              <a
-                className="text-link"
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                View source & deployment guide <ExternalLink size={13} />
-              </a>
-              <a className="text-link" href="/source.tar.gz">
-                Download source
-              </a>
-              <a
-                className="text-link"
-                href="/LICENSE.txt"
-                target="_blank"
-                rel="noreferrer"
-              >
-                License <ExternalLink size={13} />
-              </a>
-            </div>
-          </div>
-        </Panel>
+        <AttachmentSettings />
         <DataReset />
-        <Panel title="Activity" className="full">
+        <Panel title="Activity" caption="Import, export and bank sync jobs" className="full">
           {sync.data?.jobs.length ? (
             <div className="table-scroll">
               <table>
@@ -293,7 +310,41 @@ export default function Settings() {
             </div>
           )}
         </Panel>
-      </div>
+      </SettingsTabPanel>
+      <SettingsTabPanel active={activeTab} id="profile">
+        <ProfileSettings />
+        <PasswordSettings />
+      </SettingsTabPanel>
+      <SettingsTabPanel active={activeTab} id="appearance">
+        <ThemeSettings />
+        <AppearanceSettings />
+      </SettingsTabPanel>
+      <details className="details settings-about">
+        <summary>About Phooey Finance</summary>
+        <Panel title="About" action={<ShieldCheck size={19} className="muted" />}>
+          <div className="panel-body">
+            <p>
+              Phooey Finance runs in your Cloudflare account. Administrator
+              credentials start with server secrets; you can change your
+              password here. No analytics or telemetry are added by the application.
+            </p>
+            <div className="notice" style={{ marginTop: 20 }}>
+              AGPL-3.0 · Free software, without warranty. You may use, modify,
+              and share it under the license terms.
+            </div>
+            <div className="actions" style={{ marginTop: 20 }}>
+              <a className="text-link" href={sourceUrl} target="_blank" rel="noreferrer">
+                View source & deployment guide <ExternalLink size={13} />
+              </a>
+              <a className="text-link" href="/source.tar.gz">Download source</a>
+              <a className="text-link" href="/LICENSE.txt" target="_blank" rel="noreferrer">
+                License <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+        </Panel>
+      </details>
+      {importDialog && <ImportDialog onClose={() => setImportDialog(false)} />}
       {tokenDialog && (
         <TokenDialog
           onClose={() => setTokenDialog(false)}
@@ -326,6 +377,19 @@ export default function Settings() {
         </Modal>
       )}
     </>
+  );
+}
+function SettingsTabPanel({ active, id, children }: {
+  active: SettingsTab;
+  id: SettingsTab;
+  children: ReactNode;
+}) {
+  return (
+    <section className="settings-tab-panel" role="tabpanel"
+      id={`settings-panel-${id}`} aria-labelledby={`settings-tab-${id}`}
+      hidden={active !== id} tabIndex={0}>
+      <div className="settings-grid">{children}</div>
+    </section>
   );
 }
 function TokenDialog({

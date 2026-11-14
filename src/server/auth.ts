@@ -1,6 +1,7 @@
-import { compare } from "bcryptjs";
+import { compare, hash as passwordHash } from "bcryptjs";
 import { assert, hash, now, randomToken, id } from "./util";
 import { scopeSchema, type Scope } from "../shared/models";
+import { passwordChangeSchema } from "../shared/password";
 export type AppEnv = Env & {
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD_HASH: string;
@@ -30,8 +31,26 @@ export async function rateLimit(
     "Too many requests. Please try again later.",
   );
 }
+async function credentials(env: AppEnv) {
+  const bootstrapVersion = await hash(
+    env.ADMIN_USERNAME + ":" + env.ADMIN_PASSWORD_HASH,
+  );
+  const stored = await env.DB.prepare(
+    "SELECT bootstrap_version,password_hash,revision FROM admin_credentials WHERE id=1",
+  ).first<{ bootstrap_version: string; password_hash: string; revision: string }>();
+  // Rotating either admin secret deliberately resets the stored override.
+  const active = stored?.bootstrap_version === bootstrapVersion ? stored : null;
+  return {
+    bootstrapVersion,
+    passwordHash: active?.password_hash ?? env.ADMIN_PASSWORD_HASH,
+    version: active
+      ? await hash(bootstrapVersion + ":" + active.revision)
+      : bootstrapVersion,
+    storedRevision: stored?.revision ?? "",
+  };
+}
 export async function credentialVersion(env: AppEnv) {
-  return hash(env.ADMIN_USERNAME + ":" + env.ADMIN_PASSWORD_HASH);
+  return (await credentials(env)).version;
 }
 export async function login(
   env: AppEnv,
@@ -45,7 +64,8 @@ export async function login(
     "Configure the admin secrets to sign in.",
   );
   await rateLimit(env.DB, "login:" + ip, 10, 900);
-  const valid = await compare(password, env.ADMIN_PASSWORD_HASH);
+  const credential = await credentials(env);
+  const valid = await compare(password, credential.passwordHash);
   assert(
     valid && (await hash(username)) === (await hash(env.ADMIN_USERNAME)),
     401,
@@ -55,9 +75,58 @@ export async function login(
   await env.DB.prepare(
     "INSERT INTO sessions(token_hash,expires_at,credential_version) VALUES(?,?,?)",
   )
-    .bind(await hash(token), now() + 86400, await credentialVersion(env))
+    .bind(await hash(token), now() + 86400, credential.version)
     .run();
   return token;
+}
+export async function changePassword(
+  env: AppEnv,
+  request: Request,
+  input: unknown,
+) {
+  const { currentPassword, newPassword } = passwordChangeSchema.parse(input);
+  const token = cookieToken(request);
+  assert(token, 401, "Please sign in");
+  await rateLimit(
+    env.DB, "password-change:" + (await hash(env.ADMIN_USERNAME)), 5, 900,
+  );
+  const credential = await credentials(env);
+  assert(
+    await compare(currentPassword, credential.passwordHash),
+    400,
+    "Current password is incorrect.",
+  );
+  assert(
+    !(await compare(newPassword, credential.passwordHash)),
+    400,
+    "Choose a password different from your current password.",
+  );
+  const newHash = await passwordHash(newPassword, 12);
+  const revision = id();
+  const newVersion = await hash(credential.bootstrapVersion + ":" + revision);
+  const replacement = randomToken();
+  const guard = id();
+  // Check the session and credential snapshot again in the write transaction.
+  // A competing password change/logout must not let stale authorization win.
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO write_guards(id,valid) VALUES(?,EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>? AND credential_version=?) AND COALESCE((SELECT revision FROM admin_credentials WHERE id=1),'')=?)",
+    ).bind(
+      guard, await hash(token), now(), credential.version, credential.storedRevision,
+    ),
+    env.DB.prepare(
+      "INSERT INTO admin_credentials(id,bootstrap_version,password_hash,revision) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET bootstrap_version=excluded.bootstrap_version,password_hash=excluded.password_hash,revision=excluded.revision",
+    ).bind(credential.bootstrapVersion, newHash, revision),
+    env.DB.prepare("DELETE FROM sessions"),
+    env.DB.prepare(
+      "INSERT INTO sessions(token_hash,expires_at,credential_version) VALUES(?,?,?)",
+    ).bind(await hash(replacement), now() + 86400, newVersion),
+    env.DB.prepare(
+      "INSERT INTO audit(id,actor,action,entity_id) VALUES(?,'admin','password_change','admin')",
+    ).bind(id()),
+    env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+  ]);
+  return replacement;
 }
 export function cookieToken(request: Request) {
   return request.headers

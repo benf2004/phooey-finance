@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { type AppEnv } from "./auth";
 import { Ledger } from "./ledger";
-import { mapCSV, encodeCSV } from "../shared/csv";
+import {
+  mapCSV,
+  encodeCSV,
+  csvMappingSchema,
+  type CSVImportRow,
+} from "../shared/csv";
 import { id, hash, assert } from "./util";
 import {
   transactionSchema,
@@ -15,14 +20,24 @@ export const importSchema = z.object({
   name: z.string().min(1).max(200),
   account_id: z.string().min(1),
   text: z.string().max(1_500_000),
-  mapping: z.object({
-    date: z.number().int().min(0).max(100),
-    description: z.number().int().min(0).max(100),
-    amount: z.number().int().min(0).max(100),
-    dateFormat: z.enum(["iso", "mdy", "dmy"]),
-    invert: z.boolean(),
-  }),
+  mapping: csvMappingSchema,
 });
+// Keep preview validation and queued writes on the same field/default contract.
+function importedTransaction(row: CSVImportRow, account_id: string) {
+  return {
+    account_id,
+    posted: row.posted,
+    amount: row.amount,
+    description: row.description,
+    merchant: row.merchant,
+    notes: row.notes,
+    category_id: row.category_id,
+    type: row.type ?? (row.amount >= 0 ? "income" : "expense"),
+    tags: row.tags,
+    pending: row.pending,
+    reviewed: row.reviewed ?? false,
+  };
+}
 export async function previewImport(ledger: Ledger, input: unknown) {
   const data = importSchema.parse(input);
   assert(
@@ -32,6 +47,23 @@ export async function previewImport(ledger: Ledger, input: unknown) {
   );
   const rows = mapCSV(data.text, data.mapping);
   assert(rows.length > 0, 400, "CSV contains no transactions");
+  const categories = rows.some((r) => r.category)
+    ? await ledger.categories()
+    : [];
+  for (const row of rows) {
+    if (!row.category || row.error) continue;
+    const exact = categories.find((c) => c.id === row.category);
+    const matches = exact
+      ? [exact]
+      : categories.filter(
+          (c) => c.name.toLowerCase() === row.category!.toLowerCase(),
+        );
+    if (matches.length === 1) row.category_id = matches[0].id;
+    else
+      row.error = matches.length
+        ? `Category: "${row.category}" is ambiguous; use its category ID`
+        : `Category: "${row.category}" does not exist; choose an existing category`;
+  }
   const duplicates = (
     await ledger.db
       .prepare(
@@ -42,20 +74,18 @@ export async function previewImport(ledger: Ledger, input: unknown) {
   ).results;
   const matches = new Map(duplicates.map((d) => [d.row_number, d.id]));
   const result = rows.map((row) => {
-    const parsed = transactionSchema.safeParse({
-      account_id: data.account_id,
-      posted: row.posted,
-      amount: row.amount,
-      description: row.description,
-      type: row.amount >= 0 ? "income" : "expense",
-    });
+    const parsed = transactionSchema.safeParse(
+      importedTransaction(row, data.account_id),
+    );
     return {
       ...row,
       error:
         row.error ||
         (parsed.success
           ? null
-          : parsed.error.issues.map((i) => i.message).join("; ")),
+          : parsed.error.issues
+              .map((i) => `${i.path.join(".")}: ${i.message}`)
+              .join("; ")),
       duplicate: matches.get(row.row) ?? null,
     };
   });
@@ -137,32 +167,17 @@ export async function importChunk(
   assert(object, 404, "Import file not found");
   const file = await object.json<{
     account_id: string;
-    rows: {
-      row: number;
-      posted: string;
-      description: string;
-      amount: number;
-    }[];
+    rows: CSVImportRow[];
   }>();
   const ledger = new Ledger(env.DB, "import");
   const end = Math.min(payload.cursor + 50, file.rows.length);
   for (const row of file.rows.slice(payload.cursor, end)) {
-    await ledger.saveTransaction(
-      {
-        account_id: file.account_id,
-        posted: row.posted,
-        amount: row.amount,
-        description: row.description,
-        type: row.amount >= 0 ? "income" : "expense",
-        reviewed: false,
-      },
-      {
-        requestKey: payload.importId + ":" + row.row,
-        source: "csv",
-        importId: payload.importId,
-        auto: true,
-      },
-    );
+    await ledger.saveTransaction(importedTransaction(row, file.account_id), {
+      requestKey: payload.importId + ":" + row.row,
+      source: "csv",
+      importId: payload.importId,
+      auto: true,
+    });
   }
   const done = end >= file.rows.length;
   await env.DB.prepare(
@@ -197,6 +212,7 @@ const exportHeader = [
   "Reviewed",
   "Transaction ID",
   "Splits",
+  "Tags",
 ];
 type ExportPayload = {
   filter: unknown;
@@ -225,7 +241,7 @@ async function exportBatch(ledger: Ledger, payload: ExportPayload) {
   const rows = (
     await ledger.db
       .prepare(
-        `SELECT t.rowid cursor,t.posted,t.description,t.merchant,t.amount,a.currency,a.name account_name,c.name category_name,t.type,t.notes,t.pending,t.reviewed,t.id,(SELECT json_group_array(json_object('amount',s.amount,'category_id',s.category_id,'type',s.type,'notes',s.notes)) FROM splits s WHERE s.transaction_id=t.id) splits FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE ${sql} AND t.rowid>? AND t.rowid<=? ORDER BY t.rowid LIMIT 500`,
+        `SELECT t.rowid cursor,t.posted,t.description,t.merchant,t.amount,a.currency,a.name account_name,c.name category_name,t.type,t.notes,t.pending,t.reviewed,t.id,t.tags,(SELECT json_group_array(json_object('amount',s.amount,'category_id',s.category_id,'type',s.type,'notes',s.notes)) FROM splits s WHERE s.transaction_id=t.id) splits FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE ${sql} AND t.rowid>? AND t.rowid<=? ORDER BY t.rowid LIMIT 500`,
       )
       .bind(...args, payload.cursor, payload.upper)
       .all<Record<string, string | number | null>>()
@@ -244,6 +260,7 @@ async function exportBatch(ledger: Ledger, payload: ExportPayload) {
     t.reviewed,
     t.id,
     t.splits,
+    t.tags,
   ]);
   return {
     csv: encodeCSV(
@@ -423,6 +440,18 @@ export async function backup(ledger: Ledger) {
     version: 1,
     created_at: new Date().toISOString(),
     tables: data,
+    attachment_files: {
+      included: false,
+      count:
+        (
+          await ledger.db
+            .prepare(
+              "SELECT COUNT(*) count FROM transaction_attachments WHERE state='ready'",
+            )
+            .first<{ count: number }>()
+        )?.count ?? 0,
+      note: "Attachment files are not included in this JSON backup. Download them separately. Deployment-level recovery requires both D1 and the R2 attachments objects.",
+    },
   };
 }
 export async function restore(ledger: Ledger, input: unknown) {
@@ -447,6 +476,7 @@ export async function restore(ledger: Ledger, input: unknown) {
   for (const t of data.tables.transactions)
     transactionSchema.parse({
       ...t,
+      tags: t.tags === undefined ? undefined : JSON.parse(String(t.tags)),
       pending: !!t.pending,
       reviewed: !!t.reviewed,
       splits: data.tables.splits.filter((s) => s.transaction_id === t.id),

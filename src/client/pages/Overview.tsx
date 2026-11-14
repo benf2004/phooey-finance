@@ -20,6 +20,7 @@ import {
   Tooltip,
 } from "chart.js";
 import { useWorkspace } from "../context";
+import { TransactionAmount } from "../TransactionAmount";
 import { api } from "../api";
 import {
   PageHeading,
@@ -178,7 +179,7 @@ export default function Overview() {
     .flatMap((plan) => plan.estimate.stateSchedule)
     .filter((q) => q.due >= date)
     .sort((a, b) => a.due.localeCompare(b.due))[0];
-  const reserve = (next?.shortfall ?? 0) + (stateNext?.shortfall ?? 0);
+  const reserve = (next?.target ?? 0) + (stateNext?.target ?? 0);
   const categories = Object.entries(g?.categories ?? {})
     .sort((a, b) => b[1].amount - a[1].amount)
     .slice(0, 5);
@@ -322,22 +323,20 @@ export default function Overview() {
             <span className="due">
               <CalendarDays size={13} />
               {next
-                ? `Next federal installment · ${new Date(next.due + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                ? `Next quarterly estimate · ${new Date(next.due + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
                 : "No upcoming installment"}
             </span>
-            <div className="tax-amount">{formatMoney(reserve, "USD", 0)}</div>
-            <p style={{ fontSize: 12 }}>Remaining installment target</p>
+            <div className="tax-amount">{formatMoney(reserve, "USD", 2)}</div>
+            <p style={{ fontSize: 12 }}>Change in estimated tax this period</p>
             <div style={{ marginTop: 18 }}>
               <div className="tax-split">
                 <span>Federal</span>
-                <span className="money">
-                  {formatMoney(next?.shortfall ?? 0)}
-                </span>
+                <span className="money">{formatMoney(next?.target ?? 0)}</span>
               </div>
               <div className="tax-split">
                 <span>{selectedPlan?.profile.stateName ?? "State"}</span>
                 <span className="money">
-                  {formatMoney(stateNext?.shortfall ?? 0)}
+                  {formatMoney(stateNext?.target ?? 0)}
                 </span>
               </div>
             </div>
@@ -421,11 +420,8 @@ export default function Overview() {
                           {t.category_name ?? "Uncategorized"}
                         </span>
                       </td>
-                      <td
-                        className={`align-right money ${t.amount > 0 ? "positive" : ""}`}
-                      >
-                        {t.amount > 0 ? "+" : ""}
-                        {formatMoney(t.amount, t.currency)}
+                      <td className="align-right money">
+                        <TransactionAmount amount={t.amount} currency={t.currency} showPositiveSign />
                       </td>
                     </tr>
                   ))}

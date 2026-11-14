@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
@@ -6,12 +6,12 @@ import {
   Landmark,
   Tags,
   Calculator,
-  Settings as SettingsIcon,
   Sun,
   Moon,
   Search,
   LogOut,
   Menu,
+  User,
   ShieldCheck,
   CheckCircle2,
   ExternalLink,
@@ -20,7 +20,10 @@ import "./styles.css";
 import { api, post } from "./api";
 import { Button, Field, Loading, ErrorNotice } from "./ui";
 import { WorkspaceContext } from "./context";
+import { createAppearanceAutosave } from "./appearance-autosave";
+import { AppearanceSaveStatus } from "./AppearanceSaveStatus";
 import type { Account, Category } from "../shared/models";
+import { defaultTransactionAppearance, type TransactionAppearance } from "../shared/transaction-appearance";
 const Overview = lazy(() => import("./pages/Overview"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Accounts = lazy(() => import("./pages/Accounts"));
@@ -154,6 +157,8 @@ function OAuthConsent() {
 function App() {
   const [session, setSession] = useState<{
       username: string;
+      displayName: string;
+      transactionAppearance: TransactionAppearance;
       demo: boolean;
       sourceUrl: string;
     } | null>(null),
@@ -164,11 +169,28 @@ function App() {
     [path, setPath] = useState(location.pathname + location.search),
     [toast, setToast] = useState(""),
     [mobile, setMobile] = useState(false),
-    [theme, setTheme] = useState(
-      localStorage.getItem("phooey-theme") ??
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
-    );
+    [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+      try {
+        return localStorage.getItem("phooey-sidebar-collapsed") === "true";
+      } catch {
+        return false;
+      }
+    }),
+    [theme, setTheme] = useState<"light" | "dark">(() => {
+      const saved = localStorage.getItem("phooey-theme");
+      return saved === "light" || saved === "dark" ? saved
+        : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    });
   const refresh = () => setVersion((v) => v + 1);
+  const appearanceAutosave = useMemo(() => createAppearanceAutosave(
+    (appearance) => post("/settings/transaction-appearance", appearance),
+    (appearance) => setSession((current) => current ? { ...current, transactionAppearance: appearance } : current),
+  ), [session?.username]);
+  const appearanceSaveState = useSyncExternalStore(appearanceAutosave.subscribe, appearanceAutosave.getSnapshot);
+  useEffect(() => {
+    appearanceAutosave.activate();
+    return () => appearanceAutosave.dispose();
+  }, [appearanceAutosave]);
   const navigate = (next: string) => {
     history.pushState({}, "", next);
     setPath(next);
@@ -190,6 +212,13 @@ function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("phooey-theme", theme);
   }, [theme]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("phooey-sidebar-collapsed", String(sidebarCollapsed));
+    } catch {
+      // Keep the toggle usable when browser storage is unavailable.
+    }
+  }, [sidebarCollapsed]);
   useEffect(() => {
     if (session)
       Promise.all([api<Account[]>("/accounts"), api<Category[]>("/categories")])
@@ -217,7 +246,10 @@ function App() {
   }, []);
   if (!ready) return <Loading />;
   if (!session) return <Login onLogin={() => void loadSession()} />;
+  const accountName = session.displayName || session.username;
   const active = path.split("?")[0];
+  const appearanceTabActive = (active === "/settings" || active === "/connections") &&
+    new URLSearchParams(location.search).get("tab") === "appearance";
   const title = nav.find((n) => n.path === active)?.name ?? "Settings";
   const Page =
     active === "/transactions"
@@ -228,7 +260,7 @@ function App() {
           ? Categories
           : active === "/taxes"
             ? Taxes
-            : active === "/settings"
+            : active === "/settings" || active === "/connections"
               ? Settings
               : Overview;
   return (
@@ -242,59 +274,97 @@ function App() {
         notify: setToast,
         demo: session.demo,
         sourceUrl: session.sourceUrl,
+        username: session.username,
+        displayName: session.displayName ?? "",
+        updateProfile: (profile) =>
+          setSession((current) => current ? { ...current, ...profile } : current),
+        transactionAppearance: session.transactionAppearance ?? defaultTransactionAppearance,
+        updateTransactionAppearance: appearanceAutosave.change,
+        appearanceSaveState,
+        retryTransactionAppearance: appearanceAutosave.retry,
+        theme,
+        setTheme,
       }}
     >
-      <div className="app">
-        <aside className={`sidebar ${mobile ? "open" : ""}`}>
-          <a
-            className="wordmark"
-            href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/");
-            }}
-          >
-            phooey<span>finance</span>
-          </a>
-          <nav>
+      <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+        <aside id="app-sidebar" className={`sidebar ${mobile ? "open" : ""}`}>
+          <div className="sidebar-header">
+            <a
+              className="wordmark"
+              href="/"
+              aria-label="Phooey Finance home"
+              title="Phooey Finance home"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/");
+              }}
+            >
+              <b className="wordmark-name">phooey</b>
+              <span className="wordmark-name">finance</span>
+              <b className="wordmark-monogram" aria-hidden="true">p</b>
+            </a>
+            <button
+              type="button"
+              className="icon-button sidebar-toggle"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-controls="app-sidebar"
+              aria-expanded={!sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            >
+              <Menu size={20} aria-hidden="true" />
+            </button>
+          </div>
+          <nav aria-label="Main navigation">
             {nav.map((n) => (
               <a
                 key={n.path}
                 className={active === n.path ? "active" : ""}
                 href={n.path}
+                aria-label={n.name}
+                aria-current={active === n.path ? "page" : undefined}
+                title={n.name}
                 onClick={(e) => {
                   e.preventDefault();
                   navigate(n.path);
                 }}
               >
-                <n.icon size={18} strokeWidth={1.6} />
-                {n.name}
+                <n.icon size={18} strokeWidth={1.6} aria-hidden="true" />
+                <span className="nav-label">{n.name}</span>
               </a>
             ))}
           </nav>
           <div className="sidebar-bottom">
-            <a
-              className={active === "/settings" ? "active" : ""}
-              href="/settings"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate("/settings");
-              }}
-            >
-              <SettingsIcon size={18} />
-              Settings & connections
-            </a>
             <div className="profile">
-              <span className="avatar small">
-                {session.username.slice(0, 1).toUpperCase()}
-              </span>
-              <div>
-                {session.username}
-                <small>Administrator</small>
-              </div>
+              <a
+                className="account-settings"
+                href="/settings"
+                aria-label={`${accountName} account settings`}
+                title={`${accountName} account settings`}
+                aria-current={
+                  active === "/settings" || active === "/connections"
+                    ? "page"
+                    : undefined
+                }
+                onClick={(e) => {
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+                    return;
+                  e.preventDefault();
+                  navigate("/settings");
+                }}
+              >
+                <span className="avatar small" aria-hidden="true">
+                  <User size={18} strokeWidth={1.6} />
+                </span>
+                <span className="account-name">
+                  {accountName}
+                  <small>Account settings</small>
+                </span>
+              </a>
               <button
                 className="icon-button"
                 aria-label="Sign out"
+                title="Sign out"
                 onClick={async () => {
                   await post("/logout", {});
                   setSession(null);
@@ -310,6 +380,8 @@ function App() {
             <button
               className="icon-button mobile-toggle"
               aria-label="Toggle navigation"
+              aria-controls="app-sidebar"
+              aria-expanded={mobile}
               onClick={() => setMobile(!mobile)}
             >
               <Menu size={21} />
@@ -339,6 +411,7 @@ function App() {
             </div>
           </header>
           <main className="content">
+            {!appearanceTabActive && appearanceSaveState.status === "error" && <AppearanceSaveStatus />}
             <Suspense fallback={<Loading />}>
               {active === "/oauth/authorize" ? (
                 <OAuthConsent />

@@ -4,6 +4,7 @@ import {
   transactionSchema,
   ruleSchema,
   filterSchema,
+  tagsSchema,
   type Account,
   type Category,
   type Rule,
@@ -12,6 +13,11 @@ import {
   type Filters,
 } from "../shared/models";
 import { assert, id, hash, AppError } from "./util";
+type StoredTransaction = Omit<Transaction, "tags"> & { tags: string };
+const withTags = (tx: StoredTransaction): Transaction => ({
+  ...tx,
+  tags: tagsSchema.parse(JSON.parse(tx.tags)),
+});
 export function ruleMatches(
   rule: Rule,
   tx: {
@@ -53,6 +59,14 @@ export class Ledger {
         .prepare("SELECT * FROM categories ORDER BY type,name")
         .all<Category>()
     ).results;
+  }
+  async tags() {
+    const rows = await this.db
+      .prepare(
+        "SELECT 'Business' tag UNION SELECT j.value tag FROM transactions t JOIN accounts a ON a.id=t.account_id,json_each(t.tags) j WHERE t.deleted=0 AND a.archived=0 ORDER BY tag COLLATE NOCASE",
+      )
+      .all<{ tag: string }>();
+    return rows.results.map((row) => row.tag);
   }
   async rules() {
     return (
@@ -222,6 +236,11 @@ export class Ledger {
     if (f.from) add(`${alias}.posted>=?`, f.from);
     if (f.to) add(`${alias}.posted<=?`, f.to);
     if (f.account) add(`${alias}.account_id=?`, f.account);
+    if (f.tag)
+      add(
+        `EXISTS(SELECT 1 FROM json_each(${alias}.tags) WHERE value=? COLLATE NOCASE)`,
+        f.tag,
+      );
     if (f.category === "uncategorized")
       clauses.push(
         `(${alias}.category_id IS NULL AND NOT EXISTS(SELECT 1 FROM splits WHERE transaction_id=${alias}.id) OR EXISTS(SELECT 1 FROM splits WHERE transaction_id=${alias}.id AND category_id IS NULL))`,
@@ -253,12 +272,12 @@ export class Ledger {
       .first<{ total: number }>();
     const items = await this.db
       .prepare(
-        `SELECT t.*,a.name account_name,a.currency,c.name category_name,r.name rule_name,(SELECT COUNT(*) FROM splits s WHERE s.transaction_id=t.id) split_count FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN rules r ON r.id=t.rule_id WHERE ${sql} ORDER BY t.posted DESC,t.id DESC LIMIT ? OFFSET ?`,
+        `SELECT t.*,a.name account_name,a.currency,c.name category_name,r.name rule_name,(SELECT COUNT(*) FROM splits s WHERE s.transaction_id=t.id) split_count,(SELECT COUNT(*) FROM transaction_attachments f WHERE f.transaction_id=t.id AND f.state='ready') attachment_count FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN rules r ON r.id=t.rule_id WHERE ${sql} ORDER BY t.posted DESC,t.id DESC LIMIT ? OFFSET ?`,
       )
       .bind(...args, f.limit, (f.page - 1) * f.limit)
-      .all<Transaction>();
+      .all<StoredTransaction>();
     return {
-      items: items.results,
+      items: items.results.map(withTags),
       total: count?.total ?? 0,
       page: f.page,
       limit: f.limit,
@@ -267,10 +286,10 @@ export class Ledger {
   async transaction(key: string) {
     const tx = await this.db
       .prepare(
-        "SELECT t.*,a.name account_name,a.currency,c.name category_name FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE t.id=? AND t.deleted=0 AND a.archived=0",
+        "SELECT t.*,a.name account_name,a.currency,c.name category_name,(SELECT COUNT(*) FROM transaction_attachments f WHERE f.transaction_id=t.id AND f.state='ready') attachment_count FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id WHERE t.id=? AND t.deleted=0 AND a.archived=0",
       )
       .bind(key)
-      .first<Transaction>();
+      .first<StoredTransaction>();
     assert(tx, 404, "Transaction not found");
     const splits = (
       await this.db
@@ -288,7 +307,7 @@ export class Ledger {
         .bind(key)
         .all()
     ).results;
-    return { ...tx, splits, history };
+    return { ...withTags(tx), splits, history };
   }
   async saveTransaction(
     input: unknown,
@@ -345,6 +364,7 @@ export class Ledger {
       }
     }
     const existing = options.id ? await this.transaction(options.id) : null;
+    data.tags ??= existing?.tags ?? ["Business"];
     assert(
       !existing || existing.revision === options.revision,
       409,
@@ -387,7 +407,7 @@ export class Ledger {
     statements.push(
       this.db
         .prepare(
-          "INSERT INTO transactions(id,account_id,posted,amount,description,merchant,category_id,type,notes,pending,reviewed,source,user_edited,rule_id,import_id,revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,posted=excluded.posted,amount=excluded.amount,description=excluded.description,merchant=excluded.merchant,category_id=excluded.category_id,type=excluded.type,notes=excluded.notes,pending=excluded.pending,reviewed=excluded.reviewed,user_edited=1,rule_id=NULL,revision=excluded.revision",
+          "INSERT INTO transactions(id,account_id,posted,amount,description,merchant,category_id,type,notes,pending,reviewed,source,user_edited,rule_id,import_id,revision,tags) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,posted=excluded.posted,amount=excluded.amount,description=excluded.description,merchant=excluded.merchant,category_id=excluded.category_id,type=excluded.type,notes=excluded.notes,pending=excluded.pending,reviewed=excluded.reviewed,user_edited=1,rule_id=NULL,revision=excluded.revision,tags=excluded.tags",
         )
         .bind(
           key,
@@ -406,6 +426,7 @@ export class Ledger {
           rule?.id ?? null,
           options.importId ?? null,
           revision,
+          JSON.stringify(data.tags),
         ),
     );
     statements.push(
@@ -594,6 +615,30 @@ export class Ledger {
       ...request.statements({ id: ruleId, ...data }),
     ]);
     return { id: ruleId, ...data };
+  }
+  async deleteRule(key: string, requestKey?: string) {
+    const request = await this.prepareRequest<{ deleted: true }>(
+      "rule.delete",
+      { id: key },
+      requestKey,
+    );
+    if (request.prior) return request.prior;
+    const rule = await this.db
+      .prepare("SELECT * FROM rules WHERE id=?")
+      .bind(key)
+      .first<Rule>();
+    assert(rule, 404, "Rule not found");
+    await this.db.batch([
+      this.db
+        .prepare(
+          "UPDATE transactions SET rule_id=NULL,revision=revision+1 WHERE rule_id=?",
+        )
+        .bind(key),
+      this.db.prepare("DELETE FROM rules WHERE id=?").bind(key),
+      this.auditStatement("rule.delete", key, rule, null),
+      ...request.statements({ deleted: true }),
+    ]);
+    return { deleted: true };
   }
   async previewRule(input: unknown) {
     const data = ruleSchema.parse(input);

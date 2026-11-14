@@ -1,6 +1,9 @@
 import { deleteAccount } from "./accounts";
+import { listAttachments, uploadAttachment, downloadAttachment, removeAttachment, cleanupAttachments } from "./attachments";
+import { readCompression, saveCompression } from "./attachment-settings";
 import { resetData, cleanupFiles } from "./reset";
 import { Hono } from "hono";
+import { readAccountPreferences, saveProfile, saveTransactionAppearance } from "./preferences";
 import { z } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
@@ -8,6 +11,7 @@ import {
   type Principal,
   authenticate,
   login,
+  changePassword,
   cookieToken,
   sessionCookie,
   checkOrigin,
@@ -27,7 +31,7 @@ import {
 } from "./util";
 import { Ledger } from "./ledger";
 import { dateSchema, scopeSchema, filterSchema } from "../shared/models";
-import { taxState, saveTax, addPayment } from "./taxes";
+import { taxState, taxLedger, saveTax, addPayment } from "./taxes";
 import {
   connectSimplefin,
   requestSync,
@@ -117,6 +121,7 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/session", async (c) =>
   c.json({
     username: c.env.ADMIN_USERNAME,
+    ...(await readAccountPreferences(c.env.DB)),
     sourceUrl: c.env.SOURCE_URL,
     demo: !!(await c.env.DB.prepare(
       "SELECT value FROM settings WHERE key='demo'",
@@ -128,6 +133,19 @@ app.post("/api/logout", async (c) => {
     .bind(await hash(cookieToken(c.req.raw) ?? ""))
     .run();
   c.header("Set-Cookie", sessionCookie("", c.req.raw, 0));
+  return c.json({ ok: true });
+});
+app.post("/api/settings/profile", async (c) =>
+  c.json(await saveProfile(c.env.DB, await readJSON(c.req.raw, 2000))),
+);
+app.post("/api/settings/transaction-appearance", async (c) =>
+  c.json(await saveTransactionAppearance(c.env.DB, await readJSON(c.req.raw, 2000))),
+);
+app.post("/api/settings/password", async (c) => {
+  const token = await changePassword(
+    c.env, c.req.raw, await readJSON(c.req.raw, 4000),
+  );
+  c.header("Set-Cookie", sessionCookie(token, c.req.raw));
   return c.json({ ok: true });
 });
 app.post("/api/settings/reset", async (c) =>
@@ -178,6 +196,13 @@ app.get("/api/accounts/:id/history", async (c) =>
     ).results,
   ),
 );
+app.get("/api/tags", async (c) => c.json(await c.get("ledger").tags()));
+app.get("/api/settings/attachment-compression", async (c) => c.json(await readCompression(c.env.DB)));
+app.post("/api/settings/attachment-compression", async (c) => c.json(await saveCompression(c.env.DB, await readJSON(c.req.raw, 2000))));
+app.get("/api/transactions/:id/attachments", async (c) => c.json(await listAttachments(c.env, c.req.param("id"))));
+app.post("/api/transactions/:id/attachments", async (c) => c.json(await uploadAttachment(c.env, c.req.param("id"), c.req.raw)));
+app.get("/api/transactions/:id/attachments/:attachmentId", async (c) => downloadAttachment(c.env, c.req.param("id"), c.req.param("attachmentId"), c.req.query("download") === "1"));
+app.delete("/api/transactions/:id/attachments/:attachmentId", async (c) => c.json(await removeAttachment(c.env, c.req.param("id"), c.req.param("attachmentId"))));
 app.get("/api/categories", async (c) =>
   c.json(await c.get("ledger").categories()),
 );
@@ -281,6 +306,13 @@ app.put("/api/rules/:id", async (c) =>
       ),
   ),
 );
+app.delete("/api/rules/:id", async (c) =>
+  c.json(
+    await c
+      .get("ledger")
+      .deleteRule(c.req.param("id"), c.req.header("Idempotency-Key")),
+  ),
+);
 app.post("/api/rules/preview", async (c) =>
   c.json(await c.get("ledger").previewRule(await readJSON(c.req.raw))),
 );
@@ -301,6 +333,14 @@ app.get("/api/report", async (c) => {
 });
 const year = (s: string) =>
   z.coerce.number().int().min(2000).max(2100).parse(s);
+app.get("/api/taxes/:year/ledger", async (c) => {
+  const q = z
+    .object({ asOf: dateSchema, tag: z.string().default("Business") })
+    .parse(c.req.query());
+  return c.json(
+    await taxLedger(c.get("ledger"), year(c.req.param("year")), q.asOf, q.tag),
+  );
+});
 app.get("/api/taxes/:year", async (c) =>
   c.json(await taxState(c.get("ledger"), year(c.req.param("year")))),
 );
@@ -651,6 +691,7 @@ export default {
       env.DB.prepare("DELETE FROM oauth_codes WHERE expires_at<?").bind(now()),
       env.DB.prepare("DELETE FROM rate_limits WHERE expires_at<?").bind(now()),
     ]);
+    await cleanupAttachments(env);
   },
   async queue(batch: MessageBatch<{ jobId: string }>, env: AppEnv) {
     for (const message of batch.messages) {

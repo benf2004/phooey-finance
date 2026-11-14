@@ -3,40 +3,29 @@ import { Upload, ArrowRight } from "lucide-react";
 import { useWorkspace } from "../context";
 import { post } from "../api";
 import { Modal, Field, Button, ErrorNotice } from "../ui";
-import { parseCSV } from "../../shared/csv";
-import { formatMoney } from "../../shared/money";
-type ImportRow = {
-  row: number;
-  posted: string;
-  description: string;
-  amount: number;
-  error: string | null;
-  duplicate: string | null;
-};
+import {
+  parseCSV,
+  detectCSVMapping,
+  optionalCSVColumns,
+  type CSVImportRow,
+  type CSVMapping,
+} from "../../shared/csv";
+import { TransactionAmount } from "../TransactionAmount";
+type ImportRow = CSVImportRow & { duplicate: string | null };
 export default function ImportDialog({ onClose }: { onClose: () => void }) {
-  const { accounts, notify, refresh, navigate } = useWorkspace();
+  const { accounts, categories, notify, refresh, navigate } = useWorkspace();
   const [name, setName] = useState(""),
     [text, setText] = useState(""),
     [headers, setHeaders] = useState<string[]>([]),
     [account, setAccount] = useState(accounts[0]?.id ?? ""),
-    [mapping, setMapping] = useState({
+    [mapping, setMapping] = useState<CSVMapping>({
       date: 0,
       description: 1,
       amount: 2,
       dateFormat: "iso" as "iso" | "mdy" | "dmy",
       invert: false,
     }),
-    [preview, setPreview] = useState<
-      | {
-          row: number;
-          posted: string;
-          description: string;
-          amount: number;
-          error: string | null;
-          duplicate: string | null;
-        }[]
-      | null
-    >(null),
+    [preview, setPreview] = useState<ImportRow[] | null>(null),
     [skip, setSkip] = useState<Set<number>>(new Set()),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
@@ -63,29 +52,29 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
                 const first = parseCSV(content)[0];
                 if (!first) throw new Error("File is empty");
                 setHeaders(first);
-                setMapping((m) => ({
-                  ...m,
-                  date: Math.max(
-                    0,
-                    first.findIndex((c) => /date/i.test(c)),
-                  ),
-                  description: Math.max(
-                    0,
-                    first.findIndex((c) => /description|memo|payee/i.test(c)),
-                  ),
-                  amount: Math.max(
-                    0,
-                    first.findIndex((c) => /amount/i.test(c)),
-                  ),
-                }));
+                setMapping(detectCSVMapping(first));
                 setPreview(null);
                 setError(null);
               } catch (e) {
+                setText("");
+                setHeaders([]);
+                setPreview(null);
                 setError((e as Error).message);
               }
             }}
           />
         </Field>
+        <small>
+          <a
+            className="text-link"
+            href="/phooey-transactions-template.csv"
+            download="phooey-transactions-template.csv"
+          >
+            Download template
+          </a>{" "}
+          · Replace the sample rows. Use YYYY-MM-DD dates, negative expenses,
+          and positive income.
+        </small>
         <Field label="Import into account">
           <select
             value={account}
@@ -129,6 +118,41 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
                 </Field>
               ))}
             </div>
+            <details>
+              <summary>
+                Optional columns · tags, merchant, notes, category, type, status
+              </summary>
+              <div className="form-stack">
+                {optionalCSVColumns.map(({ key, label, hint }) => (
+                  <Field key={key} label={`${label} column`} hint={hint}>
+                    <select
+                      value={mapping[key] ?? ""}
+                      onChange={(e) => {
+                        setMapping((m) => ({
+                          ...m,
+                          [key]:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        }));
+                        setPreview(null);
+                      }}
+                    >
+                      <option value="">Do not import</option>
+                      {headers.map((h, i) => (
+                        <option key={i} value={i}>
+                          {h || "Column " + (i + 1)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ))}
+                <small>
+                  Account and currency come from the selected account. Splits,
+                  attachments, and transaction IDs are not imported.
+                </small>
+              </div>
+            </details>
             <div className="field-row">
               <Field label="Date format">
                 <select
@@ -167,16 +191,19 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
               {preview.filter((r) => r.duplicate).length} possible duplicates ·{" "}
               {preview.filter((r) => r.error).length} invalid rows. Possible
               duplicates are marked for review; select the rows you want to
-              skip.
+              skip. Matching rules may set the category and type for
+              uncategorized rows.
             </div>
             <div className="import-preview">
               <table>
                 <thead>
                   <tr>
                     <th>Skip</th>
+                    <th>Row</th>
                     <th>Date</th>
                     <th>Description</th>
                     <th>Amount</th>
+                    <th>Details</th>
                     <th>Review</th>
                   </tr>
                 </thead>
@@ -197,13 +224,40 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
                           }
                         />
                       </td>
+                      <td>{r.row}</td>
                       <td>{r.posted}</td>
                       <td>{r.description}</td>
                       <td className="money">
-                        {formatMoney(
-                          r.amount,
-                          accounts.find((a) => a.id === account)?.currency,
-                        )}
+                        <TransactionAmount
+                          amount={r.amount}
+                          currency={
+                            accounts.find((a) => a.id === account)?.currency
+                          }
+                        />
+                      </td>
+                      <td>
+                        <details>
+                          <summary>
+                            {(r.tags ?? ["Business"]).join(", ") || "No tags"}
+                          </summary>
+                          <div>Merchant: {r.merchant || "—"}</div>
+                          <div>Notes: {r.notes || "—"}</div>
+                          <div>
+                            Category:{" "}
+                            {categories.find((c) => c.id === r.category_id)
+                              ?.name ||
+                              r.category ||
+                              "Automatic rules"}
+                          </div>
+                          <div>
+                            Type:{" "}
+                            {r.type ?? (r.amount >= 0 ? "income" : "expense")}
+                          </div>
+                          <div>
+                            Pending: {r.pending ? "Yes" : "No"} · Reviewed:{" "}
+                            {r.reviewed ? "Yes" : "No"}
+                          </div>
+                        </details>
                       </td>
                       <td>
                         {r.error ??
@@ -251,7 +305,10 @@ export default function ImportDialog({ onClose }: { onClose: () => void }) {
           ) : (
             <Button
               busy={busy}
-              disabled={preview.every((r) => skip.has(r.row))}
+              disabled={
+                preview.every((r) => skip.has(r.row)) ||
+                preview.some((r) => r.error && !skip.has(r.row))
+              }
               onClick={async () => {
                 setBusy(true);
                 try {

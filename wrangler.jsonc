@@ -62,6 +62,9 @@
   "env": {
     "production": {
       "name": "phooey-finance",
+      "routes": [
+        { "pattern": "finance.phooey.foo", "custom_domain": true },
+      ],
       "d1_databases": [
         {
           "binding": "DB",

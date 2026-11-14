@@ -1,0 +1,4 @@
+Date,Description,Amount,Tags,Merchant,Notes,Category,Type,Pending,Reviewed
+2026-01-15,Example client payment,1500.00,Business;Client A,Example client,Replace these sample rows,,income,false,true
+2026-01-16,Example office supplies,-45.25,Business,Example store,"Paper, pens and folders",,expense,false,false
+2026-01-17,Example personal purchase,-12.50,,Example cafe,Blank Tags means no tags,,expense,false,false

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dateSchema, moneySchema, type Payment } from "./models";
+import { dateSchema, moneySchema, tagSchema, type Payment } from "./models";
 export const bracketSchema = z.object({
   upTo: moneySchema.nullable(),
   rate: z.number().min(0).max(1),
@@ -25,7 +25,8 @@ export const taxSchema = z
   .object({
     year: z.number().int().min(2000).max(2100),
     filingStatus: z.enum(["single", "joint", "separate", "head"]),
-    mode: z.enum(["manual", "ytd"]),
+    mode: z.enum(["manual", "ytd", "quarterly"]).default("quarterly"),
+    transactionTag: tagSchema.default("Business"),
     asOf: dateSchema,
     businessProfit: moneySchema,
     otherIncome: moneySchema,
@@ -99,11 +100,18 @@ function businessDay(date: string) {
   return d.toISOString().slice(0, 10);
 }
 export function defaultTaxProfile(year = 2026): TaxProfile {
+  const today = new Date().toISOString().slice(0, 10);
   return {
     year,
     filingStatus: "single",
-    mode: "manual",
-    asOf: `${year}-12-31`,
+    mode: "quarterly",
+    transactionTag: "Business",
+    asOf:
+      today < `${year}-01-01`
+        ? `${year}-01-01`
+        : today > `${year}-12-31`
+          ? `${year}-12-31`
+          : today,
     businessProfit: 0,
     otherIncome: 0,
     ...federalPreset("single"),
@@ -160,7 +168,7 @@ export function progressiveTax(
   });
   return { tax: bands.reduce((s, b) => s + b.tax, 0), bands };
 }
-export function estimateTax(
+function estimateAnnualTax(
   input: TaxProfile,
   payments: Payment[] = [],
   ledgerProfit = 0,
@@ -258,6 +266,7 @@ export function estimateTax(
     });
   };
   return {
+    periods: [] as TaxPeriod[],
     year: p.year,
     currency: "USD",
     profit,
@@ -309,5 +318,196 @@ export function estimateTax(
         : []),
     ],
   };
+}
+export type TaxPeriod = {
+  quarter: number;
+  start: string;
+  end: string;
+  income: number;
+  expenses: number;
+  profit: number;
+};
+
+export function taxPeriods(year: number): TaxPeriod[] {
+  return [
+    ["01-01", "03-31"],
+    ["04-01", "05-31"],
+    ["06-01", "08-31"],
+    ["09-01", "12-31"],
+  ].map(([start, end], i) => ({
+    quarter: i + 1,
+    start: `${year}-${start}`,
+    end: `${year}-${end}`,
+    income: 0,
+    expenses: 0,
+    profit: 0,
+  }));
+}
+const wholeDollar = (cents: number) =>
+  Math.sign(cents) * Math.round(Math.abs(cents) / 100) * 100;
+
+// Tiller-style cumulative calculations. Federal estimates round to whole dollars;
+// deductions accrue one quarter at a time and state tax uses profit before the SE deduction.
+function estimateQuarterlyTax(
+  p: TaxProfile,
+  payments: Payment[],
+  periods: TaxPeriod[],
+) {
+  if (periods.length !== 4)
+    throw new Error("Load all four tax periods before calculating");
+  const started = periods.filter((q) => q.start <= p.asOf).length;
+  let profit = 0;
+  const calculations = periods.map((q, i) => {
+    const active = q.start <= p.asOf;
+    if (active) profit += q.profit;
+    const fraction = Math.min(i + 1, started) / 4;
+    const incomeFraction = Math.min(i + 1, started) / started;
+    const netSE = Math.max(0, profit) * 0.9235;
+    const selfEmploymentTax = p.selfEmployment
+      ? wholeDollar(
+          Math.min(netSE, Math.max(0, p.ssCap - p.ssWages)) * 0.124 +
+            netSE * 0.029,
+        )
+      : 0;
+    const additionalMedicare = p.selfEmployment
+      ? wholeDollar(
+          Math.max(
+            0,
+            netSE - Math.max(0, p.additionalMedicareThreshold - p.ssWages),
+          ) * 0.009,
+        )
+      : 0;
+    const seDeduction = wholeDollar(selfEmploymentTax / 2);
+    const adjustedIncome =
+      profit +
+      Math.round((p.otherIncome + p.adjustments) * incomeFraction) -
+      seDeduction;
+    const taxable = Math.max(
+      0,
+      adjustedIncome - Math.round(p.deduction * fraction),
+    );
+    const federal = progressiveTax(taxable, p.federalBrackets);
+    const federalIncomeTax = wholeDollar(federal.tax);
+    const federalTotal = wholeDollar(
+      Math.max(0, federalIncomeTax - p.credits * incomeFraction) +
+        selfEmploymentTax +
+        additionalMedicare,
+    );
+    const stateTaxable = Math.max(
+      0,
+      profit +
+        Math.round(
+          (p.otherIncome + p.adjustments + p.stateAdjustments) * incomeFraction,
+        ) -
+        Math.round(p.stateDeduction * fraction),
+    );
+    const state = progressiveTax(
+      stateTaxable,
+      p.stateMode === "graduated"
+        ? p.stateBrackets
+        : [{ upTo: null, rate: p.stateMode === "flat" ? p.stateRate : 0 }],
+    );
+    const stateTotal =
+      p.stateMode === "none"
+        ? 0
+        : Math.max(0, state.tax - Math.round(p.stateCredits * incomeFraction));
+    return {
+      active,
+      profit,
+      adjustedIncome,
+      taxable,
+      seDeduction,
+      selfEmploymentTax,
+      additionalMedicare,
+      federalIncomeTax,
+      federalTotal,
+      stateTaxable,
+      stateTotal,
+      federalBands: federal.bands,
+      stateBands: state.bands,
+    };
+  });
+  const last = calculations[started - 1];
+  const allPayments = payments.filter((x) => x.year === p.year);
+  const schedule = (jurisdiction: "federal" | "state") => {
+    let previous = 0;
+    return calculations.map((c, i) => {
+      const cumulativeTarget =
+        jurisdiction === "federal" ? c.federalTotal : c.stateTotal;
+      const due = (
+        jurisdiction === "federal" ? p.federalDueDates : p.stateDueDates
+      )[i];
+      const target = c.active ? cumulativeTarget - previous : 0;
+      previous = cumulativeTarget;
+      const paidByDue = allPayments
+        .filter((x) => x.jurisdiction === jurisdiction && x.paid_on <= due)
+        .reduce((s, x) => s + x.amount, 0);
+      const withholding = Math.round(
+        ((jurisdiction === "federal" ? p.withholding : p.stateWithholding) *
+          Math.min(i + 1, started)) /
+          started,
+      );
+      return {
+        quarter: i + 1,
+        due,
+        target,
+        cumulativeTarget,
+        paidByDue,
+        shortfall: Math.max(0, cumulativeTarget - withholding - paidByDue),
+      };
+    });
+  };
+  const paidFederal = allPayments
+    .filter((x) => x.jurisdiction === "federal")
+    .reduce((s, x) => s + x.amount, 0);
+  const paidState = allPayments
+    .filter((x) => x.jurisdiction === "state")
+    .reduce((s, x) => s + x.amount, 0);
+  const federalRequired = Math.max(0, last.federalTotal - p.withholding);
+  const stateRequired = Math.max(0, last.stateTotal - p.stateWithholding);
+  return {
+    ...last,
+    periods,
+    year: p.year,
+    currency: "USD",
+    projectionFactor: 1,
+    total: last.federalTotal + last.stateTotal,
+    effectiveRate:
+      last.profit + p.otherIncome > 0
+        ? (last.federalTotal + last.stateTotal) / (last.profit + p.otherIncome)
+        : 0,
+    safeHarborTarget: 0,
+    priorEligible: false,
+    priorMultiplier: 1,
+    federalRequired,
+    stateRequired,
+    paidFederal,
+    paidState,
+    remainingFederal: Math.max(0, federalRequired - paidFederal),
+    remainingState: Math.max(0, stateRequired - paidState),
+    federalSchedule: schedule("federal"),
+    stateSchedule: schedule("state"),
+    assumptions: [
+      "Uses recorded USD income and expenses with the selected transaction tag. Transfers, tax payments, excluded categories and pending transactions do not contribute to profit.",
+      "Tiller periods: Jan–Mar, Apr–May, Jun–Aug and Sep–Dec. No future earnings are projected. Future periods remain uncalculated.",
+      "Federal tax is calculated cumulatively, rounded to whole dollars, then reduced by earlier calculated quarters. Negative quarterly adjustments reduce the estimate; they are not refunds.",
+      "The annual federal deduction accrues in four equal parts. State tax uses profit before the self-employment deduction, matching the spreadsheet's simplified method.",
+      "Other income, adjustments, credits and withholding entered to date are allocated evenly across started periods. Payments are tracked separately from quarterly tax changes.",
+      "This spreadsheet-style estimate is not the IRS annualized-income installment method or a determination of required payments. State-specific credits and payment rules require separate review.",
+    ],
+  };
+}
+
+export function estimateTax(
+  input: TaxProfile,
+  payments: Payment[] = [],
+  ledgerProfit = 0,
+  periods?: TaxPeriod[],
+) {
+  const profile = taxSchema.parse(input);
+  if (profile.mode !== "quarterly")
+    return estimateAnnualTax(profile, payments, ledgerProfit);
+  if (!periods) throw new Error("Quarterly ledger totals are required");
+  return estimateQuarterlyTax(profile, payments, periods);
 }
 export type TaxEstimate = ReturnType<typeof estimateTax>;

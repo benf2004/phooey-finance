@@ -15,7 +15,7 @@ import {
 } from "../ui";
 import { estimateTax, federalPreset, type TaxProfile } from "../../shared/tax";
 import { formatMoney, today } from "../../shared/money";
-import type { taxState } from "../../server/taxes";
+import type { taxState, taxLedger } from "../../server/taxes";
 type State = Awaited<ReturnType<typeof taxState>>;
 export default function Taxes() {
   const { version, refresh, notify } = useWorkspace();
@@ -31,29 +31,27 @@ export default function Taxes() {
     [payment, setPayment] = useState(false),
     [tab, setTab] = useState("plan");
   const state = useAsync(() => api<State>("/taxes/" + year), [year, version]);
+  const tags = useAsync(() => api<string[]>("/tags"), [version]);
   useEffect(() => {
-    if (state.data) setProfile(state.data.profile);
+    if (state.data) setProfile({ ...state.data.profile, mode: "quarterly" });
   }, [state.data]);
   const profitReport = useAsync(async () => {
     if (!profile) return null;
-    const report = await api<{
-      groups: Record<
-        string,
-        { businessIncome: number; businessExpenses: number }
-      >;
-    }>(`/report?from=${year}-01-01&to=${profile.asOf}`);
+    const report = await api<Awaited<ReturnType<typeof taxLedger>>>(
+      `/taxes/${year}/ledger?${new URLSearchParams({ asOf: profile.asOf, tag: profile.transactionTag })}`,
+    );
     return {
       year,
       asOf: profile.asOf,
+      tag: profile.transactionTag,
       version,
-      profit:
-        (report.groups.USD?.businessIncome ?? 0) -
-        (report.groups.USD?.businessExpenses ?? 0),
+      ...report,
     };
-  }, [year, profile?.asOf, version]);
+  }, [year, profile?.asOf, profile?.transactionTag, version]);
   const freshProfit =
     profitReport.data?.year === year &&
     profitReport.data?.asOf === profile?.asOf &&
+    profitReport.data?.tag === profile?.transactionTag &&
     profitReport.data?.version === version &&
     !profitReport.loading &&
     !profitReport.error;
@@ -71,9 +69,15 @@ export default function Taxes() {
   let result: ReturnType<typeof estimateTax> | null = null,
     calculationError: string | null = null;
   try {
-    if (p.mode === "ytd" && !freshProfit) {
+    if (!freshProfit) {
       calculationError = profitReport.error ?? "Updating ledger totals…";
-    } else result = estimateTax(p, state.data.payments, ledgerProfit);
+    } else
+      result = estimateTax(
+        p,
+        state.data.payments,
+        ledgerProfit,
+        profitReport.data!.periods,
+      );
   } catch {
     calculationError =
       "Finish entering valid rates and dates to update the estimate.";
@@ -139,10 +143,10 @@ export default function Taxes() {
         }
       />
       <ErrorNotice error={error ?? state.error ?? calculationError} />
-      {state.data.excludedCurrencies.length > 0 && (
+      {freshProfit && profitReport.data!.excludedCurrencies.length > 0 && (
         <div className="notice">
           Tax estimates use USD only. Excluded currencies:{" "}
-          {state.data.excludedCurrencies.join(", ")}.
+          {profitReport.data!.excludedCurrencies.join(", ")}.
         </div>
       )}
       <div className="tabs">
@@ -165,6 +169,49 @@ export default function Taxes() {
           Payments
         </button>
       </div>
+      {tab === "plan" && (
+        <Panel title="Transactions to include">
+          <div className="panel-body form-stack">
+            <div className="field-row">
+              <Field label="Include transactions tagged">
+                <select
+                  value={p.transactionTag}
+                  onChange={(e) => set("transactionTag", e.target.value)}
+                >
+                  {[
+                    ...new Set([
+                      "Business",
+                      ...(tags.data ?? []),
+                      p.transactionTag,
+                    ]),
+                  ].map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Ledger as-of date">
+                <input
+                  type="date"
+                  value={p.asOf}
+                  min={`${year}-01-01`}
+                  max={`${year}-12-31`}
+                  onChange={(e) => set("asOf", e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="notice">
+              {p.transactionTag} profit through {p.asOf}:{" "}
+              <strong>
+                {freshProfit ? formatMoney(ledgerProfit) : "Unavailable"}
+              </strong>
+              . Uses actual transactions in Tiller's four tax periods. No future
+              earnings are projected.
+            </div>
+          </div>
+        </Panel>
+      )}
       {tab === "payments" ? (
         <Panel
           title="Payments"
@@ -250,52 +297,10 @@ export default function Taxes() {
               {tab === "plan" ? (
                 <>
                   <div className="field-row">
-                    <Field label="Income projection">
-                      <select
-                        value={p.mode}
-                        onChange={(e) =>
-                          set("mode", e.target.value as TaxProfile["mode"])
-                        }
-                      >
-                        <option value="manual">Manual annual forecast</option>
-                        <option value="ytd">
-                          Annualize year-to-date ledger
-                        </option>
-                      </select>
-                    </Field>
-                    <Field label="Ledger as-of date">
-                      <input
-                        type="date"
-                        value={p.asOf}
-                        min={`${year}-01-01`}
-                        max={`${year}-12-31`}
-                        onChange={(e) => set("asOf", e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                  {p.mode === "manual" ? (
-                    money(
-                      "businessProfit",
-                      "Annual business profit",
-                      "Revenue minus business expenses.",
-                    )
-                  ) : (
-                    <div className="notice">
-                      Ledger business profit through {p.asOf}:{" "}
-                      <strong>
-                        {freshProfit
-                          ? formatMoney(ledgerProfit)
-                          : "Unavailable"}
-                      </strong>
-                      . This is a straight-line forecast; it is not the IRS
-                      annualized-income method.
-                    </div>
-                  )}
-                  <div className="field-row">
                     {money(
                       "otherIncome",
-                      "Other annual taxable income",
-                      "Use gross income, before withholding.",
+                      "Other taxable income to date",
+                      "Gross income before withholding; allocated evenly across started periods.",
                     )}
                     {money(
                       "adjustments",
@@ -304,15 +309,15 @@ export default function Taxes() {
                     )}
                   </div>
                   <div className="field-row">
-                    {money("deduction", "Federal deduction")}
+                    {money("deduction", "Annual federal deduction")}
                     {money("credits", "Federal tax credits")}
                   </div>
                   <div className="field-row">
-                    {money("withholding", "Annual federal withholding")}
-                    {money("stateWithholding", "Annual state withholding")}
+                    {money("withholding", "Federal withholding to date")}
+                    {money("stateWithholding", "State withholding to date")}
                   </div>
                   <div className="field-row">
-                    {money("stateDeduction", "State deduction")}
+                    {money("stateDeduction", "Annual state deduction")}
                     {money("stateCredits", "State credits")}
                   </div>
                   {money("stateAdjustments", "State income adjustments")}
@@ -330,77 +335,6 @@ export default function Taxes() {
                       "Wages already subject to Social Security",
                       "Reduces the remaining wage base.",
                     )}
-                  <Field label="Payment target">
-                    <select
-                      value={p.paymentMethod}
-                      onChange={(e) =>
-                        set(
-                          "paymentMethod",
-                          e.target.value as TaxProfile["paymentMethod"],
-                        )
-                      }
-                    >
-                      <option value="projected">
-                        Full projected tax liability
-                      </option>
-                      <option value="safe-harbor">
-                        General federal safe-harbor target
-                      </option>
-                    </select>
-                  </Field>
-                  {p.paymentMethod === "safe-harbor" && (
-                    <>
-                      <div className="field-row">
-                        <Field label="Prior-year total tax (optional)">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={p.priorTax === null ? "" : p.priorTax / 100}
-                            onChange={(e) =>
-                              set(
-                                "priorTax",
-                                e.target.value
-                                  ? Math.round(Number(e.target.value) * 100)
-                                  : null,
-                              )
-                            }
-                          />
-                        </Field>
-                        <Field label="Prior-year adjusted gross income">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={p.priorAGI === null ? "" : p.priorAGI / 100}
-                            onChange={(e) =>
-                              set(
-                                "priorAGI",
-                                e.target.value
-                                  ? Math.round(Number(e.target.value) * 100)
-                                  : null,
-                              )
-                            }
-                          />
-                        </Field>
-                      </div>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={p.priorFullYear}
-                          onChange={(e) =>
-                            set("priorFullYear", e.target.checked)
-                          }
-                        />
-                        Prior return covered a full 12-month year
-                      </label>
-                      <p className="notice">
-                        Uses the lower of 90% of projected tax and an eligible
-                        prior-year target (100% or 110%). Payment timing and
-                        special rules still matter. State targets use the full
-                        state estimate.
-                      </p>
-                    </>
-                  )}
                 </>
               ) : (
                 <>
@@ -492,9 +426,9 @@ export default function Taxes() {
                       onChange={(v) => set("stateBrackets", v)}
                     />
                   )}
-                  <h3>Payment dates & state allocations</h3>
+                  <h3>Payment dates</h3>
                   {p.federalDueDates.map((_, i) => (
-                    <div className="field-row three" key={i}>
+                    <div className="field-row" key={i}>
                       <Field label={`Q${i + 1} federal due`}>
                         <input
                           type="date"
@@ -518,23 +452,6 @@ export default function Taxes() {
                               "stateDueDates",
                               p.stateDueDates.map((x, j) =>
                                 j === i ? e.target.value : x,
-                              ),
-                            )
-                          }
-                        />
-                      </Field>
-                      <Field label="State allocation (%)">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          max="100"
-                          value={p.stateInstallments[i] * 100}
-                          onChange={(e) =>
-                            set(
-                              "stateInstallments",
-                              p.stateInstallments.map((x, j) =>
-                                j === i ? Number(e.target.value) / 100 : x,
                               ),
                             )
                           }
@@ -564,23 +481,25 @@ export default function Taxes() {
             </form>
           </details>
           <aside className="tax-summary">
-            <Panel title="Annual estimate">
+            <Panel title="Estimate to date">
               {result && (
                 <div className="panel-body annual-summary">
                   <div className="tax-total">
-                    <span className="muted">Projected tax</span>
+                    <span className="muted">
+                      Estimated tax through {p.asOf}
+                    </span>
                     <div
                       className="stat-value"
                       style={{ fontSize: 28, marginTop: 6 }}
                     >
-                      {formatMoney(result.total, "USD", 0)}
+                      {formatMoney(result.total, "USD", 2)}
                     </div>
                     <small>
                       {(result.effectiveRate * 100).toFixed(1)}% effective rate
                     </small>
                   </div>
                   {[
-                    ["Projected business profit", result.profit],
+                    [p.transactionTag + " profit", result.profit],
                     ["Taxable federal income", result.taxable],
                     ["Federal income tax", result.federalIncomeTax],
                     [
@@ -602,7 +521,7 @@ export default function Taxes() {
                     </div>
                   ))}
                   <div className="summary-line total">
-                    <span>Remaining payment target</span>
+                    <span>Unpaid estimate to date</span>
                     <span className="money">
                       {formatMoney(
                         result.remainingFederal + result.remainingState,
@@ -660,9 +579,11 @@ export default function Taxes() {
         <>
           <div className="section-title">
             <div>
-              <h2>Quarterly payments</h2>
+              <h2>Quarterly estimates</h2>
               <p className="inline-note">
-                Shortfalls include earlier unpaid installments.
+                Quarterly changes follow actual profit. Negative amounts reduce
+                the estimate; payments and cumulative unpaid totals are tracked
+                separately.
               </p>
             </div>
             <Button variant="secondary" onClick={() => setPayment(true)}>
@@ -674,31 +595,54 @@ export default function Taxes() {
             <table className="tax-schedule">
               <thead>
                 <tr>
-                  <th>Quarter</th>
-                  <th>Federal due</th>
-                  <th>State due</th>
-                  <th className="align-right">Target</th>
-                  <th className="align-right">Federal shortfall</th>
-                  <th className="align-right">State shortfall</th>
+                  <th>Period</th>
+                  <th>Payment dates</th>
+                  <th className="align-right">Profit</th>
+                  <th className="align-right">Federal</th>
+                  <th className="align-right">State</th>
+                  <th className="align-right">Quarter total</th>
+                  <th className="align-right">Unpaid to date</th>
                 </tr>
               </thead>
               <tbody>
-                {result.federalSchedule.map((q, i) => (
-                  <tr key={q.quarter}>
-                    <td>Q{q.quarter}</td>
-                    <td>{q.due}</td>
-                    <td>{result.stateSchedule[i].due}</td>
-                    <td className="align-right money">
-                      {formatMoney(q.target + result.stateSchedule[i].target)}
-                    </td>
-                    <td className="align-right money">
-                      {formatMoney(q.shortfall)}
-                    </td>
-                    <td className="align-right money">
-                      {formatMoney(result.stateSchedule[i].shortfall)}
-                    </td>
-                  </tr>
-                ))}
+                {result.federalSchedule.map((q, i) => {
+                  const period = result.periods[i];
+                  const active = period.start <= p.asOf;
+                  const stateQuarter = result.stateSchedule[i];
+                  return (
+                    <tr key={q.quarter}>
+                      <td>
+                        Q{q.quarter}
+                        <small>
+                          {period.start.slice(5)} – {period.end.slice(5)}
+                        </small>
+                      </td>
+                      <td>
+                        {q.due}
+                        <small>State: {stateQuarter.due}</small>
+                      </td>
+                      <td className="align-right money">
+                        {active ? formatMoney(period.profit) : "Not started"}
+                      </td>
+                      <td className="align-right money">
+                        {active ? formatMoney(q.target) : "—"}
+                      </td>
+                      <td className="align-right money">
+                        {active ? formatMoney(stateQuarter.target) : "—"}
+                      </td>
+                      <td className="align-right money">
+                        {active
+                          ? formatMoney(q.target + stateQuarter.target)
+                          : "—"}
+                      </td>
+                      <td className="align-right money">
+                        {active
+                          ? formatMoney(q.shortfall + stateQuarter.shortfall)
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

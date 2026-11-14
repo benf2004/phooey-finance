@@ -23,7 +23,7 @@ import {
   syncWindow,
 } from "../src/server/sync";
 import { parseCSV } from "../src/shared/csv";
-import { addPayment } from "../src/server/taxes";
+import { addPayment, taxLedger } from "../src/server/taxes";
 let mf: Miniflare, env: AppEnv, ledger: Ledger;
 const sent: string[] = [];
 beforeEach(async () => {
@@ -89,6 +89,105 @@ async function connection(generation = "one") {
     )
     .run();
 }
+describe("transaction tags and tax scope", () => {
+  it("defaults new records to Business, preserves omitted tags on edits, and supports clearing and filtering", async () => {
+    const a = await account();
+    const input = {
+      account_id: a,
+      posted: "2026-01-01",
+      amount: 10000,
+      description: "Income",
+      type: "income",
+    };
+    const created = await ledger.saveTransaction(input);
+    expect((await ledger.transaction(created.id)).tags).toEqual(["Business"]);
+    const tagged = await ledger.saveTransaction(
+      { ...input, tags: [" Personal ", "personal", "Client A"] },
+      created,
+    );
+    expect((await ledger.transaction(created.id)).tags).toEqual([
+      "Personal",
+      "Client A",
+    ]);
+    const edited = await ledger.saveTransaction(
+      { ...input, description: "Renamed" },
+      tagged,
+    );
+    expect((await ledger.transaction(created.id)).tags).toEqual([
+      "Personal",
+      "Client A",
+    ]);
+    expect((await ledger.transactions({ tag: "personal" })).total).toBe(1);
+    expect((await ledger.transactions({ tag: "Business" })).total).toBe(0);
+    expect(await ledger.tags()).toContain("Client A");
+    await ledger.saveTransaction({ ...input, tags: [] }, edited);
+    expect((await ledger.transaction(created.id)).tags).toEqual([]);
+    expect(
+      (await taxLedger(ledger, 2026, "2026-12-31", "Business")).profit,
+    ).toBe(0);
+  });
+
+  it("uses the selected tag, exact Tiller dates, split types and refunds, excluding pending and future entries", async () => {
+    const a = await account();
+    const save = (posted: string, amount: number, extra = {}) =>
+      ledger.saveTransaction({
+        account_id: a,
+        posted,
+        amount,
+        description: "Tax scope",
+        type: amount < 0 ? "expense" : "income",
+        ...extra,
+      });
+    for (const posted of [
+      "2026-03-31",
+      "2026-04-01",
+      "2026-05-31",
+      "2026-06-01",
+      "2026-08-31",
+      "2026-09-01",
+    ])
+      await save(posted, 10000);
+    await save("2026-09-02", -1000, { category_id: "groceries" });
+    await save("2026-09-03", 200, { type: "expense", category_id: "office" });
+    await save("2026-09-04", -3000, {
+      splits: [
+        { amount: -1000, type: "expense", category_id: "office" },
+        { amount: -2000, type: "transfer", category_id: null },
+      ],
+    });
+    await save("2026-09-05", 99999, { pending: true });
+    await save("2026-11-13", 99999);
+    await save("2026-09-05", 99999, { tags: ["Personal"] });
+    await save("2026-09-05", 99999, { type: "transfer" });
+    const deleted = await save("2026-09-05", 99999);
+    await ledger.deleteTransaction(deleted.id, deleted.revision);
+    const category = await ledger.saveCategory({
+      name: "Tax payments",
+      type: "expense",
+      tax_treatment: "tax_payment",
+    });
+    await save("2026-09-05", -99999, { category_id: category.id });
+    const foreign = await ledger.saveAccount({
+      name: "Sterling",
+      currency: "GBP",
+    });
+    await save("2026-09-05", 99999, { account_id: foreign.id });
+    const report = await taxLedger(ledger, 2026, "2026-11-12", "business");
+    expect(report.periods.map((q) => q.profit)).toEqual([
+      10000, 20000, 20000, 8200,
+    ]);
+    expect(report.profit).toBe(58200);
+    expect(report.excludedCurrencies).toEqual(["GBP"]);
+    expect(
+      (await taxLedger(ledger, 2026, "2026-11-12", "Personal")).profit,
+    ).toBe(99999);
+    expect(
+      (await taxLedger(ledger, 2026, "2026-05-31", "Business")).periods.map(
+        (q) => q.profit,
+      ),
+    ).toEqual([10000, 20000, 0, 0]);
+  });
+});
 const providerData = (count = 205) => ({
   accounts: [
     {
@@ -261,12 +360,19 @@ describe("durable jobs and recovery", () => {
     ).toBe(204000);
     const tx = (await ledger.transactions({ q: "Store 1" })).items[0];
     await ledger.saveTransaction(
-      { ...tx, description: "My edit", pending: !!tx.pending, reviewed: true },
+      {
+        ...tx,
+        tags: ["Personal"],
+        description: "My edit",
+        pending: !!tx.pending,
+        reviewed: true,
+      },
       { id: tx.id, revision: tx.revision },
     );
     const again = await requestSync(env);
     for (let i = 0; i < 4; i++) await run(again.jobId);
     expect((await ledger.transaction(tx.id)).description).toBe("My edit");
+    expect((await ledger.transaction(tx.id)).tags).toEqual(["Personal"]);
     expect((await ledger.transactions()).total).toBe(205);
   });
   it("does not checkpoint old provider data after replacing a connection during fetch", async () => {
@@ -350,6 +456,7 @@ describe("durable jobs and recovery", () => {
       posted: "2026-01-01",
       amount: -100,
       description: "Split",
+      tags: ["Business", "Client A"],
       type: "expense",
       category_id: "office",
       splits: [{ amount: -100, type: "expense", category_id: "groceries" }],
@@ -367,6 +474,10 @@ describe("durable jobs and recovery", () => {
     expect(await ledger.accounts()).toHaveLength(0);
     await restore(ledger, b);
     expect((await ledger.transactions()).total).toBe(1);
+    expect((await ledger.transactions()).items[0].tags).toEqual([
+      "Business",
+      "Client A",
+    ]);
     expect(
       (await ledger.report("2026-01-01", "2026-12-31")).groups.USD.expenses,
     ).toBe(100);

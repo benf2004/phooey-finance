@@ -1,0 +1,33 @@
+.transaction-tags .field > label {
+  font-weight: 500;
+}
+.transaction-tags .tag-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.transaction-tags .tag-suggestions [role="option"] {
+  padding: 8px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.transaction-tags .tag-suggestions [role="option"]:hover,
+.transaction-tags .tag-suggestions [aria-selected="true"] {
+  background: var(--green-soft);
+  color: var(--green);
+}
+@media (max-width: 600px) {
+  .transaction-tags .tag-suggestions [role="option"] {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}

@@ -20,7 +20,7 @@ Stable `(account_id, provider_id)` keys prevent bank duplicates. Pending transac
 
 ## Security and authorization
 
-There is one administrator configured through server secrets: username, bcrypt password hash and encryption key. Session tokens and MCP tokens are stored only as hashes. Sessions last one day and are invalidated when admin credentials change. Cookies are HttpOnly and SameSite=Strict, with Secure on HTTPS. Mutations validate Origin; login attempts and OAuth endpoints are rate limited.
+There is one administrator initialized through server secrets: username, bcrypt password hash and encryption key. Settings can replace the password with a cost-12 bcrypt hash stored separately from financial data in D1. A fingerprint of the server credentials ties the override to that configuration, preserving secret rotation as an administrator recovery mechanism. Password changes require the current password and a same-origin browser session, are rate limited, and atomically verify the credential/session snapshot, replace the hash, invalidate browser sessions, and create a fresh current session. Session tokens and MCP tokens are stored only as hashes. Sessions last one day and are invalidated when admin credentials change. Cookies are HttpOnly and SameSite=Strict, with Secure on HTTPS. Mutations validate Origin; login attempts and OAuth endpoints are rate limited.
 
 OAuth uses authorization codes with PKCE S256, exact registered redirects, single-use codes and resource-bound access. MCP tokens carry explicit scopes and are revoked in Settings. They cannot use ordinary dashboard API endpoints; authenticated export downloads are an intentional exception. MCP writes use the same validation, revisions and audit services as the dashboard.
 
@@ -28,7 +28,7 @@ Financial data is not added to application logs. Worker invocation logging is di
 
 ## Capacity
 
-The app targets a personal ledger on Workers Paid. CSV import accepts up to 5,000 rows and a 1.5 MB CSV body per file. CSV export supports 100,000 filtered transactions, streamed in bounded batches; larger ledgers can export separate date ranges. CSV includes split JSON, but arbitrary CSV imports map date/description/amount only. Use JSON or SQL backup for a lossless round trip.
+The app targets a personal ledger on Workers Paid. CSV import accepts up to 5,000 rows and a 1.5 MB CSV body per file. CSV export supports 100,000 filtered transactions, streamed in bounded batches; larger ledgers can export separate date ranges. CSV import maps date/description/amount plus optional tags, merchant, notes, category, type, pending and reviewed columns; see [CSV import formats](csv-import.md). Exported split JSON, IDs, account relationships and attachments are not imported. Use JSON or SQL backup for a lossless round trip.
 
 Portable JSON restore accepts 10 MB and up to roughly 85,000 table records, including audit rows. It executes as one atomic batch into an empty, disconnected ledger. Larger datasets use D1 SQL tools. CSV export is a bounded live read: new rows after its initial boundary are excluded, but edits during an export may be reflected in later chunks. Pause edits if a consistent CSV snapshot is important. Portable JSON backup uses one read batch for its included tables.
 

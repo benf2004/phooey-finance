@@ -96,6 +96,13 @@ export function handleMcp(
       () => ledger.rules(),
     );
     tool(
+      "list_tags",
+      "List available transaction tags. New transactions default to Business; send an empty tags array to leave a transaction untagged.",
+      z.object({}),
+      "finance:read",
+      () => ledger.tags(),
+    );
+    tool(
       "get_report",
       "Summarize posted transactions for an inclusive date range. Currencies are never combined; transfers are excluded.",
       z.object({ from: dateSchema, to: dateSchema }),

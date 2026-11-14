@@ -65,6 +65,27 @@ it("upgrades existing bank connections without deleting ledger data or selecting
       (await db.prepare("SELECT COUNT(*) AS count FROM transactions").first())
         ?.count,
     ).toBe(1);
+    await db.exec(
+      `INSERT INTO settings(key,value,revision) VALUES('tax:2026','{"mode":"ytd","stateName":"Utah","stateRate":0.0445}',3)`,
+    );
+    await db.exec(
+      (
+        await readFile("migrations/0007_transaction_tags.sql", "utf8")
+      ).replaceAll("\n", " "),
+    );
+    expect(
+      (await db.prepare("SELECT tags FROM transactions").first())?.tags,
+    ).toBe('["Business"]');
+    const saved = await db
+      .prepare("SELECT value,revision FROM settings WHERE key='tax:2026'")
+      .first<{ value: string; revision: number }>();
+    expect(saved?.revision).toBe(4);
+    expect(JSON.parse(saved!.value)).toEqual({
+      mode: "quarterly",
+      transactionTag: "Business",
+      stateName: "Utah",
+      stateRate: 0.0445,
+    });
   } finally {
     await mf.dispose();
   }

@@ -2,13 +2,17 @@ import { describe, it, expect } from "vitest";
 import { parseMoney } from "../src/shared/money";
 import { parseCSV, encodeCSV, normalizeDate } from "../src/shared/csv";
 import {
-  defaultTaxProfile,
+  defaultTaxProfile as actualDefaultTaxProfile,
   estimateTax,
   progressiveTax,
   taxSchema,
 } from "../src/shared/tax";
 import { transactionSchema } from "../src/shared/models";
 import { ruleMatches } from "../src/server/ledger";
+const defaultTaxProfile = () => ({
+  ...actualDefaultTaxProfile(),
+  mode: "manual" as const,
+});
 describe("money and import correctness", () => {
   it("converts decimal strings without floating point drift", () => {
     expect(parseMoney("1.01")).toBe(101);

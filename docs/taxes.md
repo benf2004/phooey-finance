@@ -1,15 +1,31 @@
-# Tax estimation model
+# Quarterly tax estimates
 
-The planner estimates US federal ordinary-income and self-employment taxes plus one configurable state income tax. It is an editable planning model, not a filing or penalty-calculation engine.
+The tax screen uses recorded profit through the selected date, without annualizing it or forecasting future earnings. Choose one transaction tag to include; the selection is saved separately for each tax year. Existing and new transactions default to `Business`. Tags can be added, removed, and reused in transaction details, and transactions can be filtered by tag.
 
-Choose a manual annual business-profit forecast, or annualize year-to-date business income minus business expenses from tax-coded USD ledger entries. Pending transactions and transfers are excluded. Other taxable income, adjustments, deductions, credits, wage withholding and estimated payments are explicit inputs. Net wage deposits are not a substitute for gross wages and withholding.
+## Included transactions
 
-Federal brackets apply marginally to each band. The 2026 preset is based on [IRS Revenue Procedure 2025-32 / IRB 2025-45](https://www.irs.gov/irb/2025-45_IRB); the Social Security wage base follows [SSA contribution and benefit bases](https://www.ssa.gov/oact/cola/cbb.html). Filing status changes do not silently replace customized rates; use “Load 2026 federal rates” to load matching preset assumptions. Other years require verified rates and dates.
+The selected tag is matched without regard to case. Posted USD income and expenses contribute to profit, including uncategorized entries. Transfers, pending or deleted transactions, archived accounts, and categories with `tax_payment` or `excluded` treatment do not contribute. Other currencies are excluded and identified in the UI. For split transactions, each split's type and category determine whether its amount contributes; the parent transaction's tags apply to all splits. Expense refunds reduce expenses.
 
-Self-employment calculations apply the net-earnings factor, Social Security cap after entered wages, Medicare and the additional Medicare threshold. The deductible portion reduces federal income. State tax can be disabled, flat, or graduated, with its own adjustments, deductions, credits and withholding. All bracket boundaries and rates are editable.
+## Spreadsheet calculation
 
-The full-liability target subtracts expected withholding from estimated tax. The optional general federal safe-harbor target compares the current-year percentage with an eligible prior-year target, using entered prior tax, AGI and full-year eligibility. State targets use the full state estimate. Installment due dates and state allocation weights are editable. Recorded payments reduce cumulative shortfalls according to their dates; late payments do not appear as paid before their recorded date.
+The periods match the supplied Tiller workbook: January–March, April–May, June–August, and September–December. A period includes only transactions through the selected cutoff. Future periods remain uncalculated.
 
-The YTD forecast is straight-line annualization, **not** the IRS annualized-income installment method. The model does not implement QBI, AMT, preferential capital-gains rates, itemized-deduction eligibility, refundable-credit eligibility, multi-state allocation, local taxes, or special filing/safe-harbor exceptions. Use explicit adjustments and verify the assumptions for your situation. Holiday changes and state-specific installment rules need review; the planner exposes the due dates rather than claiming universal schedules.
+For each started period, federal tax uses cumulative profit:
 
-The UI exposes calculation bands, assumptions and source notes. Current YTD totals must load successfully before an estimate is shown; a failed refresh cannot silently reuse profit from a different cutoff.
+1. Self-employment net earnings = positive cumulative profit × 92.35%.
+2. Self-employment tax = 12.4% of net earnings up to the remaining Social Security wage base, plus 2.9% of net earnings. Round to whole dollars, as in the workbook. Additional Medicare tax uses the configured threshold when applicable.
+3. Deduct half of self-employment tax, rounded to whole dollars, and the accrued annual federal deduction (one fourth per started period).
+4. Apply the editable federal brackets marginally to remaining taxable income. Round federal income tax to whole dollars, apply nonrefundable credits, and add self-employment taxes.
+5. The quarter's estimate is the cumulative tax minus the previous quarter's cumulative tax. A negative change reduces the estimate; it is not a refund.
+
+State tax uses cumulative profit **before** the federal self-employment deduction, matching the spreadsheet's simplified state formula. The configured flat rate or graduated brackets, state adjustments, accrued state deduction, and credits apply. State cumulative totals round to cents, so the difference between consecutive totals can differ by one cent from rounding a quarter independently.
+
+Other taxable income, adjustments, credits, and withholding entered to date are allocated evenly across started periods. Deductions are annual amounts. Net wage deposits are not a substitute for gross wages and withholding. Recorded estimated payments reduce unpaid totals separately from quarterly changes; payment dates determine whether a payment was made by a quarter's due date.
+
+## Rates and limitations
+
+The 2026 federal preset references [IRS Revenue Procedure 2025-32 / IRB 2025-45](https://www.irs.gov/irb/2025-45_IRB) and the [SSA contribution and benefit bases](https://www.ssa.gov/oact/cola/cbb.html). Filing status changes do not silently replace custom rates. Use “Load 2026 federal rates” to replace the federal assumptions with that preset. Other years require verified rates and dates. Existing state rates and other assumptions are preserved during the tag migration.
+
+This is the workbook's simplified estimate, not a filing, penalty, safe-harbor, or IRS annualized-income installment calculation. It does not implement QBI, AMT, preferential capital-gains rates, itemized-deduction eligibility, refundable-credit eligibility, or state-specific credits. Whole-dollar federal rounding and calculation on small amounts intentionally follow the workbook. Legacy `manual` and `ytd` modes remain supported by the calculation API for compatibility, but saved profiles migrate to `quarterly` and the UI uses actual quarterly estimates.
+
+Tag and cutoff changes reload ledger totals before displaying an estimate. A failed refresh cannot silently reuse totals for another tag or date. Tags survive bank syncs, appear in CSV exports, and round-trip in portable backups. Older backups without tags receive the `Business` default.

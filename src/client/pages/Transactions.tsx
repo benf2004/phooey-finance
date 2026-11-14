@@ -12,6 +12,7 @@ import {
   Link2,
   Bookmark,
   Check,
+  Paperclip,
 } from "lucide-react";
 import { useWorkspace } from "../context";
 import { api, post } from "../api";
@@ -29,6 +30,11 @@ import {
 import { formatMoney, today } from "../../shared/money";
 import type { Transaction, TransactionInput } from "../../shared/models";
 import ImportDialog from "./ImportDialog";
+import TransactionTags from "../TransactionTags";
+import AmountFilter from "../AmountFilter";
+import { TransactionAmount } from "../TransactionAmount";
+import { TransactionAttachments } from "../TransactionAttachments";
+import { formatEnumLabel } from "../labels";
 const fresh = (account: string): TransactionInput => ({
   account_id: account,
   posted: today(),
@@ -38,6 +44,7 @@ const fresh = (account: string): TransactionInput => ({
   category_id: null,
   type: "expense",
   notes: "",
+  tags: ["Business"],
   reviewed: true,
   pending: false,
   splits: [],
@@ -45,9 +52,11 @@ const fresh = (account: string): TransactionInput => ({
 export function TransactionEditor({
   transactionId,
   onClose,
+  focusAttachments = false,
 }: {
   transactionId?: string;
   onClose: () => void;
+  focusAttachments?: boolean;
 }) {
   const { accounts, categories, refresh, notify } = useWorkspace();
   const [data, setData] = useState<TransactionInput>(
@@ -61,6 +70,8 @@ export function TransactionEditor({
     >([]),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
+    [attachmentBusy, setAttachmentBusy] = useState(false),
+    [attachmentPreviewOpen, setAttachmentPreviewOpen] = useState(false),
     [loading, setLoading] = useState(!!transactionId);
   useEffect(() => {
     if (transactionId)
@@ -87,6 +98,7 @@ export function TransactionEditor({
   const submission = useRef<{ json: string; key: string } | null>(null);
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (attachmentBusy) return;
     setBusy(true);
     setError(null);
     const json = JSON.stringify({ data, revision });
@@ -111,8 +123,8 @@ export function TransactionEditor({
   return (
     <Modal
       title={transactionId ? "Transaction details" : "Add a transaction"}
-      onClose={onClose}
-      wide={data.splits.length > 0}
+      onClose={() => { if (!attachmentBusy && !attachmentPreviewOpen) onClose(); }}
+      className="transaction-editor"
     >
       {loading ? (
         <Loading />
@@ -159,7 +171,7 @@ export function TransactionEditor({
               />
             </Field>
           </div>
-          <div className="field-row">
+          <div className="field-row transaction-classification">
             <Field
               label="Amount"
               hint="Negative for money out; positive for money in."
@@ -182,33 +194,40 @@ export function TransactionEditor({
                 <option value="transfer">Transfer</option>
               </select>
             </Field>
+            <Field label="Category">
+              <select
+                value={data.category_id ?? ""}
+                onChange={(e) => {
+                  const cat = categories.find((c) => c.id === e.target.value);
+                  setData((d) => ({
+                    ...d,
+                    category_id: cat?.id ?? null,
+                    type: cat?.type ?? d.type,
+                  }));
+                }}
+              >
+                <option value="">Uncategorized</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
-          <Field label="Category">
-            <select
-              value={data.category_id ?? ""}
-              onChange={(e) => {
-                const cat = categories.find((c) => c.id === e.target.value);
-                setData((d) => ({
-                  ...d,
-                  category_id: cat?.id ?? null,
-                  type: cat?.type ?? d.type,
-                }));
-              }}
-            >
-              <option value="">Uncategorized</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Notes">
-            <textarea
-              value={data.notes}
-              onChange={(e) => set("notes", e.target.value)}
+          <div className="field-row transaction-annotations">
+            <TransactionTags
+              value={data.tags}
+              onChange={(tags) => set("tags", tags)}
             />
-          </Field>
+            <Field label="Notes">
+              <textarea
+                rows={3}
+                value={data.notes}
+                onChange={(e) => set("notes", e.target.value)}
+              />
+            </Field>
+          </div>
           <div className="actions">
             <label className="checkbox-label">
               <input
@@ -328,6 +347,7 @@ export function TransactionEditor({
               </p>
             </section>
           )}
+          <TransactionAttachments transactionId={transactionId} disabled={busy} onBusyChange={setAttachmentBusy} onPreviewChange={setAttachmentPreviewOpen} autoFocus={focusAttachments} />
           {source === "simplefin" && (
             <p className="notice">
               Your changes are preserved during bank sync. Original provider
@@ -362,7 +382,7 @@ export function TransactionEditor({
               <Button
                 type="button"
                 variant="danger"
-                disabled={busy}
+                disabled={busy || attachmentBusy}
                 onClick={async () => {
                   if (
                     !confirm(
@@ -388,10 +408,10 @@ export function TransactionEditor({
                 Delete
               </Button>
             )}
-            <Button type="button" variant="secondary" onClick={onClose}>
+            <Button type="button" variant="secondary" disabled={attachmentBusy} onClick={onClose}>
               Cancel
             </Button>
-            <Button busy={busy} type="submit">
+            <Button busy={busy} disabled={attachmentBusy} type="submit">
               Save transaction
             </Button>
           </div>
@@ -413,6 +433,24 @@ export function TransactionEditor({
     </Modal>
   );
 }
+function categoryBadgeStyle(color?: string) {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return undefined;
+  const channels = [1, 3, 5].map((offset) => {
+    const channel = parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance =
+    0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  const blackContrast = (luminance + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  // Choose the higher-contrast foreground for the configured background in either theme.
+  return {
+    backgroundColor: color,
+    color: blackContrast >= whiteContrast ? "#000000" : "#ffffff",
+  };
+}
 export default function Transactions() {
   const { accounts, categories, version, refresh, navigate, notify } =
     useWorkspace();
@@ -422,12 +460,14 @@ export default function Transactions() {
     [editor, setEditor] = useState<string | null>(
       params.has("new") ? "new" : params.get("edit"),
     ),
+    [focusAttachments, setFocusAttachments] = useState(false),
     [importing, setImporting] = useState(false),
     [selected, setSelected] = useState<Set<string>>(new Set()),
     [bulk, setBulk] = useState(""),
     [error, setError] = useState<string | null>(null),
     [saved, setSaved] = useState<{ name: string; query: string }[]>([]);
   const queryString = params.toString();
+  const tags = useAsync(() => api<string[]>("/tags"), [version]);
   const data = useAsync(
     () =>
       api<{ items: Transaction[]; total: number; page: number; limit: number }>(
@@ -436,6 +476,7 @@ export default function Transactions() {
     [queryString, version],
   );
   useEffect(() => {
+    setFocusAttachments(false);
     setEditor(params.has("new") ? "new" : params.get("edit"));
     if (params.get("focus") === "search")
       document.querySelector<HTMLInputElement>("#transaction-search")?.focus();
@@ -459,12 +500,18 @@ export default function Transactions() {
   }
   function closeEditor() {
     setEditor(null);
+    setFocusAttachments(false);
     const p = new URLSearchParams(location.search);
     p.delete("new");
     p.delete("edit");
     navigate("/transactions?" + p.toString());
   }
+  function openEditor(id: string, attachments = false) {
+    setFocusAttachments(attachments);
+    setEditor(id);
+  }
   const items = data.data?.items ?? [];
+  const categoryColors = new Map(categories.map((c) => [c.id, c.color]));
   return (
     <>
       <PageHeading
@@ -476,7 +523,7 @@ export default function Transactions() {
               Import
             </Button>
             <Button
-              onClick={() => setEditor("new")}
+              onClick={() => openEditor("new")}
               disabled={!accounts.length}
             >
               <Plus size={16} />
@@ -544,8 +591,6 @@ export default function Transactions() {
           {[
             ["from", "From", "date"],
             ["to", "To", "date"],
-            ["min", "Min amount (cents)", "number"],
-            ["max", "Max amount (cents)", "number"],
           ].map(([key, label, type]) => (
             <Field key={key} label={label}>
               <input
@@ -555,6 +600,18 @@ export default function Transactions() {
               />
             </Field>
           ))}
+          <AmountFilter
+            label="Minimum amount"
+            value={params.get("min")}
+            navigationKey={queryString}
+            onCommit={(value) => change("min", value)}
+          />
+          <AmountFilter
+            label="Maximum amount"
+            value={params.get("max")}
+            navigationKey={queryString}
+            onCommit={(value) => change("max", value)}
+          />
           <Field label="Transaction type">
             <select
               value={params.get("type") ?? ""}
@@ -564,6 +621,24 @@ export default function Transactions() {
               <option value="income">Income</option>
               <option value="expense">Expense</option>
               <option value="transfer">Transfer</option>
+            </select>
+          </Field>
+          <Field label="Tag">
+            <select
+              value={params.get("tag") ?? ""}
+              onChange={(e) => change("tag", e.target.value)}
+            >
+              <option value="">All tags</option>
+              {[
+                ...new Set([
+                  ...(tags.data ?? ["Business"]),
+                  ...(params.get("tag") ? [params.get("tag")!] : []),
+                ]),
+              ].map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Review status">
@@ -697,7 +772,7 @@ export default function Transactions() {
         ) : items.length ? (
           <>
             <div className="table-scroll">
-              <table>
+              <table className="transactions-table">
                 <thead>
                   <tr>
                     <th>
@@ -716,15 +791,28 @@ export default function Transactions() {
                     </th>
                     <th>Date</th>
                     <th>Transaction</th>
+                    <th className="hide-mobile">Type</th>
                     <th className="hide-mobile">Account</th>
                     <th>Category</th>
                     <th className="align-right">Amount</th>
+                    <th className="receipts-column">Receipts</th>
                     <th className="hide-mobile">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((t) => (
-                    <tr key={t.id}>
+                    <tr
+                      key={t.id}
+                      onClick={(e) => {
+                        if (
+                          (e.target as HTMLElement).closest(
+                            "button, input, a, select, textarea, label",
+                          )
+                        )
+                          return;
+                        openEditor(t.id);
+                      }}
+                    >
                       <td>
                         <input
                           type="checkbox"
@@ -741,43 +829,84 @@ export default function Transactions() {
                           }
                         />
                       </td>
-                      <td className="muted" style={{ whiteSpace: "nowrap" }}>
-                        {new Date(t.posted + "T12:00:00").toLocaleDateString(
-                          "en-US",
-                          { month: "short", day: "numeric" },
-                        )}
-                        <small>{t.posted.slice(0, 4)}</small>
+                      <td className="muted transaction-date">
+                        <time dateTime={t.posted}>
+                          {new Date(t.posted + "T12:00:00").toLocaleDateString(
+                            "en-US",
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}
+                        </time>
                       </td>
-                      <td>
+                      <td className="transaction-description">
                         <button
+                          type="button"
                           className="transaction-name"
-                          onClick={() => setEditor(t.id)}
+                          aria-haspopup="dialog"
+                          onClick={() => openEditor(t.id)}
                         >
                           {t.description}
                         </button>
-                        <small>
-                          {t.merchant || t.type}
-                          {t.split_count > 0
-                            ? " · " + t.split_count + " splits"
-                            : ""}
-                          {t.transfer_id ? " · linked" : ""}
-                        </small>
+                        <div
+                          className={`transaction-meta transaction-tag-list ${
+                            t.merchant || t.split_count || t.transfer_id || t.tags.length
+                              ? ""
+                              : "transaction-meta-type-only"
+                          }`}
+                        >
+                          <small className="transaction-mobile-type muted">
+                            {formatEnumLabel(t.type)}
+                          </small>
+                          {(t.merchant || t.split_count > 0 || t.transfer_id) && (
+                            <small className="muted">
+                              {[
+                                t.merchant,
+                                t.split_count > 0 ? `${t.split_count} splits` : "",
+                                t.transfer_id ? "Linked" : "",
+                              ].filter(Boolean).join(" · ")}
+                            </small>
+                          )}
+                          {t.tags.map((tag) => (
+                            <span key={tag} className="badge neutral">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </td>
+                      <td className="hide-mobile">{formatEnumLabel(t.type)}</td>
                       <td className="hide-mobile">{t.account_name}</td>
                       <td>
                         <span
-                          className={`badge ${t.category_name ? "neutral" : "amber"}`}
+                          className={`badge ${t.split_count || t.category_name ? "neutral" : "amber"}`}
+                          style={
+                            !t.split_count && t.category_name && t.category_id
+                              ? categoryBadgeStyle(
+                                  categoryColors.get(t.category_id),
+                                )
+                              : undefined
+                          }
                         >
                           {t.split_count
                             ? "Split transaction"
                             : (t.category_name ?? "Uncategorized")}
                         </span>
                       </td>
-                      <td
-                        className={`align-right money ${t.amount > 0 ? "positive" : ""}`}
-                      >
-                        {t.amount > 0 ? "+" : ""}
-                        {formatMoney(t.amount, t.currency)}
+                      <td className="align-right money">
+                        <TransactionAmount amount={t.amount} currency={t.currency} showPositiveSign />
+                      </td>
+                      <td className="receipts-column">
+                        {t.attachment_count > 0 ? (
+                          <button
+                            type="button"
+                            className="receipt-count"
+                            aria-label={`View ${t.attachment_count} ${t.attachment_count === 1 ? "attachment" : "attachments"} for ${t.description}`}
+                            aria-haspopup="dialog"
+                            title="View receipts and invoices"
+                            onClick={() => openEditor(t.id, true)}
+                          >
+                            <Paperclip size={14} aria-hidden="true" />
+                            <span aria-hidden="true">{t.attachment_count}</span>
+                          </button>
+                        ) : <span className="muted" aria-label="No receipts or invoices">—</span>}
                       </td>
                       <td className="hide-mobile">
                         {t.pending ? (
@@ -847,6 +976,7 @@ export default function Transactions() {
         <TransactionEditor
           transactionId={editor === "new" ? undefined : editor}
           onClose={closeEditor}
+          focusAttachments={focusAttachments}
         />
       )}{" "}
       {importing && <ImportDialog onClose={() => setImporting(false)} />}

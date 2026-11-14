@@ -232,7 +232,7 @@ describe("real Worker and D1 integration", () => {
   });
   it("saves editable tax assumptions with optimistic locking", async () => {
     const state = await json("/api/taxes/2026");
-    state.profile.businessProfit = 10000000;
+    state.profile.otherIncome = 10000000;
     const result = await json("/api/taxes/2026", "PUT", {
       profile: state.profile,
       revision: 0,

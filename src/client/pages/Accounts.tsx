@@ -23,6 +23,7 @@ import {
 } from "../ui";
 import { formatMoney } from "../../shared/money";
 import type { Account } from "../../shared/models";
+import { formatEnumLabel } from "../labels";
 export default function Accounts() {
   const { accounts, navigate, refresh, notify } = useWorkspace();
   const [edit, setEdit] = useState<Account | null | undefined>(undefined),
@@ -58,7 +59,7 @@ export default function Accounts() {
               </div>
               <h3>{a.name}</h3>
               <small>
-                {a.institution || "Personal account"} · {a.kind}
+                {a.institution || "Personal account"} · {formatEnumLabel(a.kind)}
               </small>
               <div className="stat-value">
                 {formatMoney(a.balance, a.currency)}
@@ -203,7 +204,7 @@ function AccountEditor({
                 "other",
               ].map((v) => (
                 <option key={v} value={v}>
-                  {v[0].toUpperCase() + v.slice(1)}
+                  {formatEnumLabel(v)}
                 </option>
               ))}
             </select>

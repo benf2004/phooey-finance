@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Pencil, ArrowRight, Workflow } from "lucide-react";
+import { useRef, useState } from "react";
+import { Plus, Pencil, Trash2, Workflow } from "lucide-react";
 import { useWorkspace } from "../context";
 import { api, post, useSubmit } from "../api";
 import {
@@ -14,7 +14,39 @@ import {
   useAsync,
 } from "../ui";
 import type { Category, Rule } from "../../shared/models";
-import { formatMoney } from "../../shared/money";
+import { TransactionAmount } from "../TransactionAmount";
+import { formatEnumLabel } from "../labels";
+function useRuleDeletion(onDeleted?: () => void) {
+  const { refresh, notify } = useWorkspace();
+  const submit = useSubmit();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async (id: string, name: string) => {
+    if (pending.current) return;
+    if (
+      !confirm(
+        `Delete rule “${name}”? Existing transactions and their categories will stay. This rule will no longer categorize future transactions.`,
+      )
+    )
+      return;
+    pending.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await submit("/rules/" + encodeURIComponent(id), {}, "DELETE");
+      refresh();
+      notify("Rule deleted");
+      onDeleted?.();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
+  return { busy, error, remove };
+}
 export default function Categories() {
   const { categories, accounts, version, refresh, notify } = useWorkspace();
   const [tab, setTab] = useState("categories"),
@@ -22,6 +54,7 @@ export default function Categories() {
     [rule, setRule] = useState<Rule | null | undefined>(),
     [error, setError] = useState<string | null>(null);
   const rules = useAsync(() => api<Rule[]>("/rules"), [version]);
+  const deletion = useRuleDeletion();
   return (
     <>
       <PageHeading
@@ -52,7 +85,7 @@ export default function Categories() {
           <span className="badge-count">{rules.data?.length ?? 0}</span>
         </button>
       </div>
-      <ErrorNotice error={error ?? rules.error} />
+      <ErrorNotice error={deletion.error ?? error ?? rules.error} />
       {tab === "categories" ? (
         <div className="panel table-scroll">
           <table>
@@ -82,9 +115,11 @@ export default function Categories() {
                     {c.name}
                   </td>
                   <td>
-                    <span className="badge neutral">{c.type}</span>
+                    <span className="badge neutral">
+                      {formatEnumLabel(c.type)}
+                    </span>
                   </td>
-                  <td>{c.tax_treatment.replaceAll("_", " ")}</td>
+                  <td>{formatEnumLabel(c.tax_treatment)}</td>
                   <td className="align-right">
                     <button
                       className="icon-button"
@@ -131,9 +166,28 @@ export default function Categories() {
                         {categories.find((c) => c.id === r.category_id)?.name}
                       </td>
                       <td>
-                        <Button variant="ghost" onClick={() => setRule(r)}>
-                          Preview & edit <ArrowRight size={14} />
-                        </Button>
+                        <div className="actions">
+                          <button
+                            type="button"
+                            className="icon-button"
+                            disabled={deletion.busy}
+                            aria-label={`Preview and edit rule: ${r.name}`}
+                            title={`Preview and edit rule: ${r.name}`}
+                            onClick={() => setRule(r)}
+                          >
+                            <Pencil size={15} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            disabled={deletion.busy}
+                            aria-label={`Delete rule: ${r.name}`}
+                            title={`Delete rule: ${r.name}`}
+                            onClick={() => void deletion.remove(r.id, r.name)}
+                          >
+                            <Trash2 size={15} aria-hidden="true" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -229,7 +283,9 @@ function CategoryEditor({
               }
             >
               {["expense", "income", "transfer"].map((v) => (
-                <option key={v}>{v}</option>
+                <option key={v} value={v}>
+                  {formatEnumLabel(v)}
+                </option>
               ))}
             </select>
           </Field>
@@ -251,7 +307,7 @@ function CategoryEditor({
                 "excluded",
               ].map((v) => (
                 <option value={v} key={v}>
-                  {v.replaceAll("_", " ")}
+                  {formatEnumLabel(v)}
                 </option>
               ))}
             </select>
@@ -283,6 +339,7 @@ function RuleEditor({
   onClose: () => void;
 }) {
   const submit = useSubmit();
+  const deletion = useRuleDeletion(onClose);
   const { categories, accounts, refresh, notify } = useWorkspace();
   const [data, setData] = useState({
       name: rule?.name ?? "",
@@ -297,7 +354,7 @@ function RuleEditor({
       category_id: rule?.category_id ?? categories[0]?.id ?? "",
     }),
     [error, setError] = useState<string | null>(null),
-    [busy, setBusy] = useState(false),
+    [saving, setBusy] = useState(false),
     [preview, setPreview] = useState<{
       matches: {
         id: string;
@@ -310,16 +367,24 @@ function RuleEditor({
       limited: boolean;
     } | null>(null),
     [ruleId, setRuleId] = useState(rule?.id);
+  const busy = saving || deletion.busy;
   const change = (patch: Partial<typeof data>) => {
     setData({ ...data, ...patch });
     setPreview(null);
   };
   return (
-    <Modal title={rule ? "Edit rule" : "Add rule"} onClose={onClose} wide>
+    <Modal
+      title={ruleId ? "Edit rule" : "Add rule"}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      wide
+    >
       <form
         className="form-stack"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (busy) return;
           setBusy(true);
           try {
             const saved = await submit<{ id: string }>(
@@ -407,7 +472,7 @@ function RuleEditor({
           </Field>
         </div>
         <div className="field-row">
-          <Field label="Min signed amount (optional)">
+          <Field label="Minimum amount (optional)">
             <input
               type="number"
               step="0.01"
@@ -421,7 +486,7 @@ function RuleEditor({
               }
             />
           </Field>
-          <Field label="Max signed amount (optional)">
+          <Field label="Maximum amount (optional)">
             <input
               type="number"
               step="0.01"
@@ -456,8 +521,20 @@ function RuleEditor({
           />
           Rule enabled
         </label>
-        <ErrorNotice error={error} />
+        <ErrorNotice error={deletion.error ?? error} />
         <div className="actions">
+          {ruleId && (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy}
+              busy={deletion.busy}
+              onClick={() => void deletion.remove(ruleId, data.name)}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              Delete rule
+            </Button>
+          )}
           <Button
             variant="secondary"
             type="button"
@@ -497,7 +574,7 @@ function RuleEditor({
                     <tr key={t.id}>
                       <td>{t.description}</td>
                       <td className="money">
-                        {formatMoney(t.amount, t.currency)}
+                        <TransactionAmount amount={t.amount} currency={t.currency} />
                       </td>
                     </tr>
                   ))}

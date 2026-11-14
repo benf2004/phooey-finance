@@ -10,6 +10,16 @@ export const dateSchema = z
     "Use a valid date",
   );
 export const typeSchema = z.enum(["income", "expense", "transfer"]);
+export const tagSchema = z.string().trim().min(1).max(50);
+export const tagsSchema = z
+  .array(tagSchema)
+  .max(20)
+  .transform((tags) =>
+    tags.filter(
+      (tag, i) =>
+        tags.findIndex((t) => t.toLowerCase() === tag.toLowerCase()) === i,
+    ),
+  );
 export const categorySchema = z.object({
   name: z.string().trim().min(1).max(80),
   type: typeSchema,
@@ -63,6 +73,7 @@ export const transactionSchema = z
     category_id: z.string().nullable().default(null),
     type: typeSchema,
     notes: z.string().max(4000).default(""),
+    tags: tagsSchema.optional(),
     reviewed: z.boolean().default(true),
     pending: z.boolean().default(false),
     splits: z.array(splitSchema).max(30).default([]),
@@ -108,6 +119,7 @@ export const filterSchema = z.object({
   to: dateSchema.optional(),
   account: z.string().optional(),
   category: z.string().optional(),
+  tag: tagSchema.optional(),
   type: typeSchema.optional(),
   reviewed: z.enum(["0", "1"]).optional(),
   pending: z.enum(["0", "1"]).optional(),
@@ -130,7 +142,10 @@ export type Rule = Omit<z.infer<typeof ruleSchema>, "enabled"> & {
   id: string;
   enabled: number;
 };
-export type TransactionInput = z.infer<typeof transactionSchema>;
+export type TransactionInput = Omit<
+  z.infer<typeof transactionSchema>,
+  "tags"
+> & { tags: string[] };
 export type Transaction = Omit<
   TransactionInput,
   "reviewed" | "pending" | "splits"
@@ -146,6 +161,7 @@ export type Transaction = Omit<
   rule_name: string | null;
   user_edited: number;
   split_count: number;
+  attachment_count: number;
   transfer_id: string | null;
 };
 export const scopes = [
