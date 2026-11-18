@@ -83,6 +83,7 @@ try {
   });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.setFixedTime(new Date(2024, 0, 15, 12));
   await page.goto(url + "/transactions");
   await page.getByLabel("Username").fill("test-admin");
   await page
@@ -162,9 +163,44 @@ try {
   const emptyRow = page
     .getByRole("row")
     .filter({ hasText: "Synthetic transaction without receipts" });
-  await expect(
-    emptyRow.locator('[aria-label="No receipts or invoices"]'),
-  ).toHaveText("—");
+  const uploadButton = emptyRow.getByRole("button", {
+    name: /^Upload receipts for/,
+  });
+  await expect(uploadButton).toBeVisible();
+  const period = page.getByRole("combobox", { name: "Date range" });
+  await page.goto(url + "/transactions?reviewed=1&page=2");
+  await period.selectOption("last-quarter");
+  const exportLink = page.getByRole("link", { name: "Export" });
+  const exportParams = async () =>
+    new URL(await exportLink.getAttribute("href"), url).searchParams;
+  expect(Object.fromEntries(await exportParams())).toEqual({
+    reviewed: "1",
+    from: "2023-10-01",
+    to: "2023-12-31",
+  });
+  await expect(receiptRow).toHaveCount(0);
+  await period.selectOption("this-quarter");
+  let bounds = await exportParams();
+  expect([bounds.get("from"), bounds.get("to")]).toEqual([
+    "2024-01-01",
+    "2024-03-31",
+  ]);
+  await period.selectOption("custom");
+  await expect(page.getByLabel("From", { exact: true })).toHaveValue(
+    "2024-01-01",
+  );
+  await page.getByLabel("To", { exact: true }).fill("2026-11-30");
+  await expect(receiptRow).toBeVisible();
+  await page.reload();
+  await expect(period).toHaveValue("custom");
+  await period.selectOption("all");
+  expect(Object.fromEntries(await exportParams())).toEqual({ reviewed: "1" });
+  await page.goto(url + "/");
+  await expect(period).toHaveValue("year-to-date");
+  await period.selectOption("last-month");
+  await expect(page.getByLabel("Report start date")).toHaveValue("2023-12-01");
+  await expect(page.getByLabel("Report end date")).toHaveValue("2023-12-31");
+  await page.goto(url + "/transactions");
   let attachmentListRequests = 0;
   page.on("request", (request) => {
     if (
@@ -175,6 +211,25 @@ try {
   });
   await page.reload();
   await expect(receiptRow).toBeVisible();
+  expect(attachmentListRequests).toBe(0);
+  for (let count = 1; count <= 2; count++) {
+    const fileChooser = page.waitForEvent("filechooser");
+    await uploadButton.click();
+    await (
+      await fileChooser
+    ).setFiles({
+      name: `row-receipt-${count}.pdf`,
+      mimeType: "application/pdf",
+      buffer: Buffer.from(twoPagePDF()),
+    });
+    await expect(
+      emptyRow.getByRole("button", {
+        name: new RegExp(`^View ${count} attachment`),
+      }),
+    ).toBeVisible();
+    await expect(page.locator("dialog.transaction-editor")).toHaveCount(0);
+    await expect(emptyRow.getByRole("checkbox")).not.toBeChecked();
+  }
   expect(attachmentListRequests).toBe(0);
   await page
     .getByRole("row")
@@ -473,7 +528,7 @@ try {
     .click();
   await expect(
     editor.getByText(
-      "Save this transaction, then reopen it to attach receipts or invoices.",
+      "Save this transaction, then add receipts from the Transactions table.",
     ),
   ).toBeVisible();
   expect(errors).toEqual([]);
@@ -486,6 +541,8 @@ try {
         smallerBytes: smaller.size,
         pdfBytes: pdf.length,
         checks: [
+          "calendar presets, custom dates, and export bounds",
+          "direct row uploads and receipt counts",
           "real photo compression",
           "preset persistence and future-upload-only behavior",
           "in-app image and full PDF previews",

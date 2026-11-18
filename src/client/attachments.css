@@ -106,7 +106,7 @@
   }
 }
 .transactions-table .receipts-column {
-  width: 64px;
+  width: 84px;
   text-align: center;
   white-space: nowrap;
 }
@@ -127,4 +127,19 @@
 .receipt-count:hover {
   background: var(--green-soft);
   color: var(--green);
+}
+
+.receipt-upload {
+  min-height: 30px;
+  color: var(--green);
+}
+.receipt-upload:disabled {
+  opacity: .5;
+  cursor: default;
+}
+@media (max-width: 600px) {
+  .receipts-column button {
+    min-width: 40px;
+    min-height: 40px;
+  }
 }

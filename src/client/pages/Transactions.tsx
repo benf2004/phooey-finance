@@ -31,8 +31,18 @@ import { formatMoney, today } from "../../shared/money";
 import type { Transaction, TransactionInput } from "../../shared/models";
 import ImportDialog from "./ImportDialog";
 import TransactionTags from "../TransactionTags";
+import {
+  DateRangeSelect,
+  calendarRanges,
+  type CalendarPeriod,
+} from "../DateRangeSelect";
 import AmountFilter from "../AmountFilter";
 import { TransactionAmount } from "../TransactionAmount";
+import {
+  AttachmentPicker,
+  UploadFeedback,
+  useAttachmentUpload,
+} from "../AttachmentUpload";
 import { TransactionAttachments } from "../TransactionAttachments";
 import { formatEnumLabel } from "../labels";
 const fresh = (account: string): TransactionInput => ({
@@ -454,9 +464,13 @@ function categoryBadgeStyle(color?: string) {
 export default function Transactions() {
   const { accounts, categories, version, refresh, navigate, notify } =
     useWorkspace();
+  const receiptUpload = useAttachmentUpload();
   const params = new URLSearchParams(location.search);
+  const period = params.get("period") ?? "";
+  const customDates =
+    period === "custom" || params.has("from") || params.has("to");
   const [query, setQuery] = useState(params.get("q") ?? ""),
-    [filtersOpen, setFiltersOpen] = useState(false),
+    [filtersOpen, setFiltersOpen] = useState(customDates),
     [editor, setEditor] = useState<string | null>(
       params.has("new") ? "new" : params.get("edit"),
     ),
@@ -467,15 +481,31 @@ export default function Transactions() {
     [error, setError] = useState<string | null>(null),
     [saved, setSaved] = useState<{ name: string; query: string }[]>([]);
   const queryString = params.toString();
+  const ranges = calendarRanges();
+  const range = Object.hasOwn(ranges, period)
+    ? ranges[period as CalendarPeriod]
+    : undefined;
+  const requestParams = new URLSearchParams(params);
+  requestParams.delete("period");
+  if (range) {
+    requestParams.set("from", range.from);
+    requestParams.set("to", range.to);
+  }
+  const requestQuery = requestParams.toString();
+  const bounds = {
+    from: requestParams.get("from") ?? "",
+    to: requestParams.get("to") ?? "",
+  };
   const tags = useAsync(() => api<string[]>("/tags"), [version]);
   const data = useAsync(
     () =>
       api<{ items: Transaction[]; total: number; page: number; limit: number }>(
-        "/transactions?" + queryString,
+        "/transactions?" + requestQuery,
       ),
-    [queryString, version],
+    [requestQuery, version],
   );
   useEffect(() => {
+    if (customDates) setFiltersOpen(true);
     setFocusAttachments(false);
     setEditor(params.has("new") ? "new" : params.get("edit"));
     if (params.get("focus") === "search")
@@ -489,13 +519,18 @@ export default function Transactions() {
       .catch(() => {});
   }, []);
   function change(key: string, value: string) {
+    changeFilters({ [key]: value });
+  }
+  function changeFilters(values: Record<string, string>) {
     const p = new URLSearchParams(location.search);
     p.delete("new");
     p.delete("edit");
     p.delete("focus");
-    if (value) p.set(key, value);
-    else p.delete(key);
-    if (key !== "page") p.delete("page");
+    for (const [key, value] of Object.entries(values)) {
+      if (value) p.set(key, value);
+      else p.delete(key);
+    }
+    if (!("page" in values)) p.delete("page");
     navigate("/transactions?" + p.toString());
   }
   function closeEditor() {
@@ -549,6 +584,17 @@ export default function Transactions() {
             aria-label="Search transactions"
           />
         </form>
+        <DateRangeSelect
+          allowAll
+          ranges={ranges}
+          value={range ? period : customDates ? "custom" : "all"}
+          onChange={(value) => {
+            changeFilters({
+              period: value === "all" ? "" : value,
+              ...(value === "custom" ? bounds : { from: "", to: "" }),
+            });
+          }}
+        />
         <select
           aria-label="Filter by account"
           value={params.get("account") ?? ""}
@@ -581,7 +627,7 @@ export default function Transactions() {
           <SlidersHorizontal size={15} />
           Filters
         </Button>
-        <a className="button secondary" href={"/api/export?" + queryString}>
+        <a className="button secondary" href={"/api/export?" + requestQuery}>
           <Download size={15} />
           Export
         </a>
@@ -595,8 +641,14 @@ export default function Transactions() {
             <Field key={key} label={label}>
               <input
                 type={type}
-                value={params.get(key) ?? ""}
-                onChange={(e) => change(key, e.target.value)}
+                value={requestParams.get(key) ?? ""}
+                onChange={(e) =>
+                  changeFilters({
+                    period: "custom",
+                    ...bounds,
+                    [key]: e.target.value,
+                  })
+                }
               />
             </Field>
           ))}
@@ -766,6 +818,7 @@ export default function Transactions() {
         </div>
       )}
       <ErrorNotice error={error ?? data.error} />
+      <UploadFeedback upload={receiptUpload} />
       <div className="panel">
         {data.loading && !data.data ? (
           <Loading />
@@ -894,7 +947,7 @@ export default function Transactions() {
                         <TransactionAmount amount={t.amount} currency={t.currency} showPositiveSign />
                       </td>
                       <td className="receipts-column">
-                        {t.attachment_count > 0 ? (
+                        {t.attachment_count > 0 && (
                           <button
                             type="button"
                             className="receipt-count"
@@ -906,7 +959,19 @@ export default function Transactions() {
                             <Paperclip size={14} aria-hidden="true" />
                             <span aria-hidden="true">{t.attachment_count}</span>
                           </button>
-                        ) : <span className="muted" aria-label="No receipts or invoices">—</span>}
+                        )}
+                        <AttachmentPicker
+                          label={`Upload receipts for ${t.description}`}
+                          className="receipt-count receipt-upload"
+                          count={t.attachment_count}
+                          disabled={receiptUpload.busy}
+                          onChoose={(files) =>
+                            receiptUpload.choose(t, t.attachment_count, files)
+                          }
+                        >
+                          <Upload size={14} aria-hidden="true" />
+                          {t.attachment_count === 0 && "Add"}
+                        </AttachmentPicker>
                       </td>
                       <td className="hide-mobile">
                         {t.pending ? (

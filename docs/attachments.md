@@ -2,7 +2,7 @@
 
 Saved transactions support receipts and invoices from the transaction editor. Files save immediately, independently of monetary/category edits. New transactions show a save-first instruction. The compact list scrolls when it contains many files; clicking a filename opens an in-app preview. Images offer fit/actual-size viewing; PDFs use the browser's full document viewer with explicit new-tab and download fallbacks. Escape closes the preview and restores focus to its filename.
 
-The Transactions table has a compact Receipts column: an empty dash or a paperclip/count button with a descriptive accessible label. The button opens the editor and focuses its attachment section. Both images and PDFs count. Counts refresh after uploads/removals and come from an indexed `state='ready'` count in the existing transaction list/detail SQL, with no per-row HTTP requests. Upload reservations and deleted references do not count. Row-wide editing, checkbox selection, Type/category presentation, tag search and amount filters retain their existing behavior.
+Each row in the Transactions table has an upload button in the Receipts column. It opens the file picker directly. The adjacent paperclip count opens the editor and focuses its attachment section. Both images and PDFs count. Counts refresh after uploads/removals and come from an indexed `state='ready'` count in the existing transaction list/detail SQL, with no per-row HTTP requests. Upload reservations and deleted references do not count. Row-wide editing, checkbox selection, Type/category presentation, tag search and amount filters retain their existing behavior.
 
 ## Compression and supported files
 

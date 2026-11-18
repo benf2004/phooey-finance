@@ -24,6 +24,8 @@ export function amountInput(cents: number) {
   return (cents / 100).toFixed(2);
 }
 export function today() {
-  const d = new Date();
+  return localDateString(new Date());
+}
+export function localDateString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

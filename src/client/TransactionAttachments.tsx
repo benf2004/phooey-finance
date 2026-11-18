@@ -4,18 +4,15 @@ import { Paperclip, Download, Trash2, ExternalLink } from "lucide-react";
 import { api } from "./api";
 import { useWorkspace } from "./context";
 import { Button, ErrorNotice, Modal } from "./ui";
-import { prepareAttachment } from "./attachment-compression";
 import {
-  fileSize,
-  MAX_ATTACHMENTS,
-  type Attachment,
-  type CompressionSettings,
-} from "../shared/attachments";
+  attachmentPath as path,
+  AttachmentPicker,
+  UploadFeedback,
+  useAttachmentUpload,
+} from "./AttachmentUpload";
+import { fileSize, type Attachment } from "../shared/attachments";
 import "./attachments.css";
 
-type Upload = { id: string; file: File; prepared?: File; error?: string };
-const path = (transactionId: string) =>
-  `/transactions/${encodeURIComponent(transactionId)}/attachments`;
 const url = (attachment: Attachment) =>
   `/api${path(attachment.transaction_id)}/${encodeURIComponent(attachment.id)}`;
 
@@ -37,15 +34,17 @@ export function TransactionAttachments({
   const focused = useRef(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(!!transactionId);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("");
-  const [failed, setFailed] = useState<Upload[]>([]);
+  const [removing, setRemoving] = useState(false);
+  const upload = useAttachmentUpload((attachment) => {
+    setAttachments((current) => [
+      ...current.filter((a) => a.id !== attachment.id),
+      attachment,
+    ]);
+  }, onBusyChange);
+  const { error, setError, setStatus } = upload;
+  const busy = removing || upload.busy;
   const [preview, setPreview] = useState<Attachment | null>(null);
-  const input = useRef<HTMLInputElement>(null);
   const previewTrigger = useRef<HTMLButtonElement | null>(null);
-  const request = useRef<XMLHttpRequest | null>(null);
-  const mounted = useRef(true);
   useEffect(() => {
     if (!autoFocus || loading || focused.current || !section.current) return;
     focused.current = true;
@@ -61,13 +60,6 @@ export function TransactionAttachments({
     onPreviewChange(!!preview);
     if (!preview) previewTrigger.current?.focus();
   }, [preview, onPreviewChange]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      request.current?.abort();
-    };
-  }, []);
   const load = async () => {
     if (!transactionId) return;
     setLoading(true);
@@ -84,104 +76,8 @@ export function TransactionAttachments({
     void load();
   }, [transactionId]);
   function markBusy(value: boolean) {
-    setBusy(value);
+    setRemoving(value);
     onBusyChange(value);
-  }
-  async function upload(files: Upload[]) {
-    if (!transactionId) return;
-    markBusy(true);
-    setError(null);
-    setFailed([]);
-    const failures: Upload[] = [];
-    let completed = 0;
-    try {
-      const settings = await api<CompressionSettings>(
-        "/settings/attachment-compression",
-      );
-      for (const item of files) {
-        if (!mounted.current) break;
-        try {
-          setStatus(`Preparing ${item.file.name}…`);
-          const prepared =
-            item.prepared ?? (await prepareAttachment(item.file, settings));
-          item.prepared = prepared;
-          if (!mounted.current) break;
-          const attachment = await new Promise<Attachment>(
-            (resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              request.current = xhr;
-              xhr.open("POST", "/api" + path(transactionId));
-              xhr.timeout = 120000;
-              xhr.setRequestHeader("Content-Type", prepared.type);
-              xhr.setRequestHeader(
-                "X-File-Name",
-                encodeURIComponent(prepared.name),
-              );
-              xhr.setRequestHeader("X-Original-Size", String(item.file.size));
-              xhr.setRequestHeader("Idempotency-Key", item.id);
-              xhr.upload.onprogress = (e) =>
-                setStatus(
-                  `Uploading ${item.file.name}${e.lengthComputable ? ` · ${Math.round((e.loaded / e.total) * 100)}%` : ""}…`,
-                );
-              xhr.onload = () => {
-                try {
-                  const data = JSON.parse(xhr.responseText);
-                  if (xhr.status >= 200 && xhr.status < 300 && data?.id)
-                    resolve(data);
-                  else
-                    reject(
-                      new Error(
-                        data.error ??
-                          "Upload failed. Refresh the list and retry.",
-                      ),
-                    );
-                } catch {
-                  reject(
-                    new Error(
-                      "Could not confirm the upload. Refresh the list before retrying.",
-                    ),
-                  );
-                }
-              };
-              xhr.onerror = () =>
-                reject(
-                  new Error(
-                    "Connection lost. Retry to safely confirm this upload.",
-                  ),
-                );
-              xhr.ontimeout = () =>
-                reject(
-                  new Error(
-                    "Upload timed out. Retry to safely confirm this upload.",
-                  ),
-                );
-              xhr.onabort = () => reject(new Error("Upload cancelled."));
-              xhr.send(prepared);
-            },
-          );
-          if (!mounted.current) break;
-          setAttachments((current) => [
-            ...current.filter((a) => a.id !== attachment.id),
-            attachment,
-          ]);
-          completed++;
-        } catch (e) {
-          failures.push({ ...item, error: (e as Error).message });
-        }
-      }
-      setFailed(failures);
-      setStatus(
-        `${completed} ${completed === 1 ? "file" : "files"} attached${failures.length ? `; ${failures.length} could not be uploaded` : ""}.`,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-      setFailed(files);
-      setStatus("");
-    } finally {
-      request.current = null;
-      markBusy(false);
-      if (completed && mounted.current) refresh();
-    }
   }
   return (
     <section
@@ -198,48 +94,22 @@ export function TransactionAttachments({
           )}
         </h3>
         {transactionId && (
-          <>
-            <input
-              ref={input}
-              hidden
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,application/pdf,.heic,.heif,.avif"
-              aria-label="Choose receipt or invoice files"
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                e.target.value = "";
-                if (files.length + attachments.length > MAX_ATTACHMENTS) {
-                  setError(
-                    `Choose up to ${MAX_ATTACHMENTS - attachments.length} more files.`,
-                  );
-                  return;
-                }
-                if (files.length)
-                  void upload(
-                    files.map((file) => ({ file, id: crypto.randomUUID() })),
-                  );
-              }}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={
-                disabled ||
-                busy ||
-                loading ||
-                attachments.length >= MAX_ATTACHMENTS
-              }
-              onClick={() => input.current?.click()}
-            >
-              Add files
-            </Button>
-          </>
+          <AttachmentPicker
+            label="Add files"
+            className="button secondary"
+            count={attachments.length}
+            disabled={disabled || busy || loading}
+            onChoose={(files) =>
+              upload.choose({ id: transactionId }, attachments.length, files)
+            }
+          >
+            Add files
+          </AttachmentPicker>
         )}
       </div>
       {!transactionId ? (
         <p className="inline-note">
-          Save this transaction, then reopen it to attach receipts or invoices.
+          Save this transaction, then add receipts from the Transactions table.
         </p>
       ) : (
         <>
@@ -313,32 +183,7 @@ export function TransactionAttachments({
               ))}
             </ul>
           )}
-          {status && (
-            <p className="inline-note" role="status">
-              {status}
-              {busy && " Please keep this dialog open."}
-            </p>
-          )}
-          {failed.length > 0 && (
-            <div className="attachment-failures">
-              <ul>
-                {failed.map((item) => (
-                  <li key={item.id}>
-                    {item.file.name}: {item.error ?? "Upload did not start."}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={busy || disabled}
-                onClick={() => void upload(failed)}
-              >
-                Retry failed files
-              </Button>
-            </div>
-          )}
-          <ErrorNotice error={error} />
+          <UploadFeedback upload={upload} disabled={disabled || removing} />
           {error && (
             <Button
               type="button"

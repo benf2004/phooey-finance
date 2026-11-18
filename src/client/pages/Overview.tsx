@@ -1,3 +1,4 @@
+import { DateRangeSelect, calendarRanges, type CalendarPeriod } from "../DateRangeSelect";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownLeft,
@@ -134,9 +135,15 @@ function CashChart({
 export default function Overview() {
   const { accounts, navigate, version } = useWorkspace();
   const date = today();
-  const [from, setFrom] = useState(date.slice(0, 4) + "-01-01"),
-    [to, setTo] = useState(date),
-    [currency, setCurrency] = useState("USD");
+  const [period, setPeriod] = useState<CalendarPeriod | "custom">(
+    "year-to-date",
+  );
+  const ranges = calendarRanges();
+  const [customRange, setCustomRange] = useState<{ from: string; to: string }>(
+    ranges["year-to-date"],
+  );
+  const { from, to } = period === "custom" ? customRange : ranges[period];
+  const [currency, setCurrency] = useState("USD");
   const report = useAsync(
     () => api<Report>(`/report?from=${from}&to=${to}`),
     [from, to, version],
@@ -199,20 +206,35 @@ export default function Overview() {
         }
       />
       <div className="toolbar">
+        <DateRangeSelect
+          ranges={ranges}
+          value={period}
+          onChange={(value) => {
+            if (value === "all") return;
+            if (value === "custom") setCustomRange({ from, to });
+            setPeriod(value);
+          }}
+        />
         <div className="date-range">
           <CalendarDays size={16} className="muted" />
           <input
             aria-label="Report start date"
             type="date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setPeriod("custom");
+              setCustomRange({ from: e.target.value, to });
+            }}
           />
           <span className="muted">—</span>
           <input
             aria-label="Report end date"
             type="date"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setPeriod("custom");
+              setCustomRange({ from, to: e.target.value });
+            }}
           />
         </div>
         <select
