@@ -30,7 +30,7 @@ import {
   errorMessage,
 } from "./util";
 import { Ledger } from "./ledger";
-import { dateSchema, scopeSchema, filterSchema } from "../shared/models";
+import { dateSchema, scopeSchema, filterSchema, transactionFieldSchema } from "../shared/models";
 import { taxState, taxLedger, saveTax, addPayment } from "./taxes";
 import {
   connectSimplefin,
@@ -252,6 +252,14 @@ app.put("/api/transactions/:id", async (c) => {
       requestKey: c.req.header("Idempotency-Key"),
     }),
   );
+});
+app.patch("/api/transactions/:id", async (c) => {
+  const { edit, revision } = z
+    .object({ edit: transactionFieldSchema, revision: z.number().int() })
+    .parse(await readJSON(c.req.raw));
+  return c.json(await c.get("ledger").editTransactionField(
+    c.req.param("id"), edit, revision, c.req.header("Idempotency-Key"),
+  ));
 });
 app.delete("/api/transactions/:id", async (c) => {
   const data = z

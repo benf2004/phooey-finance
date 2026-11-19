@@ -28,7 +28,7 @@ import {
   useAsync,
 } from "../ui";
 import { formatMoney, today } from "../../shared/money";
-import type { Transaction, TransactionInput } from "../../shared/models";
+import type { Transaction, TransactionFieldEdit, TransactionInput } from "../../shared/models";
 import ImportDialog from "./ImportDialog";
 import TransactionTags from "../TransactionTags";
 import {
@@ -43,6 +43,7 @@ import {
   UploadFeedback,
   useAttachmentUpload,
 } from "../AttachmentUpload";
+import { TransactionField } from "../TransactionField";
 import { TransactionAttachments } from "../TransactionAttachments";
 import { formatEnumLabel } from "../labels";
 const fresh = (account: string): TransactionInput => ({
@@ -545,6 +546,19 @@ export default function Transactions() {
     setFocusAttachments(attachments);
     setEditor(id);
   }
+  function fieldSaved(original: Transaction, edit: TransactionFieldEdit, revision: number) {
+    const category = edit.field === "category_id" ? categories.find((c) => c.id === edit.value) : null;
+    const changes = edit.field === "category_id"
+      ? { category_id: edit.value, category_name: category?.name ?? null, type: category?.type ?? original.type }
+      : { [edit.field]: edit.value };
+    data.setData((page) => page && ({
+      ...page,
+      items: page.items.map((row) => row.id === original.id && row.revision === original.revision
+        ? { ...row, ...changes, revision }
+        : row),
+    }));
+    refresh();
+  }
   const items = data.data?.items ?? [];
   const categoryColors = new Map(categories.map((c) => [c.id, c.color]));
   return (
@@ -843,7 +857,8 @@ export default function Transactions() {
                       />
                     </th>
                     <th>Date</th>
-                    <th>Transaction</th>
+                    <th>Description</th>
+                    <th>Merchant</th>
                     <th className="hide-mobile">Type</th>
                     <th className="hide-mobile">Account</th>
                     <th>Category</th>
@@ -891,6 +906,7 @@ export default function Transactions() {
                         </time>
                       </td>
                       <td className="transaction-description">
+                        <TransactionField transaction={t} field="description" onSaved={fieldSaved}>
                         <button
                           type="button"
                           className="transaction-name"
@@ -899,9 +915,10 @@ export default function Transactions() {
                         >
                           {t.description}
                         </button>
+                        </TransactionField>
                         <div
                           className={`transaction-meta transaction-tag-list ${
-                            t.merchant || t.split_count || t.transfer_id || t.tags.length
+                            t.split_count || t.transfer_id || t.tags.length
                               ? ""
                               : "transaction-meta-type-only"
                           }`}
@@ -909,10 +926,9 @@ export default function Transactions() {
                           <small className="transaction-mobile-type muted">
                             {formatEnumLabel(t.type)}
                           </small>
-                          {(t.merchant || t.split_count > 0 || t.transfer_id) && (
+                          {(t.split_count > 0 || t.transfer_id) && (
                             <small className="muted">
                               {[
-                                t.merchant,
                                 t.split_count > 0 ? `${t.split_count} splits` : "",
                                 t.transfer_id ? "Linked" : "",
                               ].filter(Boolean).join(" · ")}
@@ -925,23 +941,28 @@ export default function Transactions() {
                           ))}
                         </div>
                       </td>
+                      <td className="transaction-merchant">
+                        <TransactionField transaction={t} field="merchant" onSaved={fieldSaved}>
+                          <span className={t.merchant ? undefined : "muted"}>{t.merchant || "—"}</span>
+                        </TransactionField>
+                      </td>
                       <td className="hide-mobile">{formatEnumLabel(t.type)}</td>
                       <td className="hide-mobile">{t.account_name}</td>
                       <td>
-                        <span
-                          className={`badge ${t.split_count || t.category_name ? "neutral" : "amber"}`}
-                          style={
-                            !t.split_count && t.category_name && t.category_id
-                              ? categoryBadgeStyle(
-                                  categoryColors.get(t.category_id),
-                                )
-                              : undefined
-                          }
-                        >
-                          {t.split_count
-                            ? "Split transaction"
-                            : (t.category_name ?? "Uncategorized")}
-                        </span>
+                        {t.split_count || t.transfer_id ? (
+                          <button type="button" className="ledger-category-trigger"
+                            title={t.split_count ? "Edit split categories in transaction details" : "View linked transfer"}
+                            onClick={() => openEditor(t.id)}>
+                            <span className="badge neutral">{t.split_count ? "Split transaction" : (t.category_name ?? "Linked transfer")}</span>
+                          </button>
+                        ) : (
+                          <TransactionField transaction={t} field="category_id" onSaved={fieldSaved}>
+                            <span className={`badge ${t.category_name ? "neutral" : "amber"}`}
+                              style={categoryBadgeStyle(t.category_id ? categoryColors.get(t.category_id) : undefined)}>
+                              {t.category_name ?? "Uncategorized"}
+                            </span>
+                          </TransactionField>
+                        )}
                       </td>
                       <td className="align-right money">
                         <TransactionAmount amount={t.amount} currency={t.currency} showPositiveSign />

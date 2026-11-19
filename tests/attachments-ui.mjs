@@ -121,6 +121,10 @@ try {
       posted: "2026-11-14",
     },
   });
+  const category = await (await page.request.post(url + "/api/categories", {
+    headers: { Origin: url },
+    data: { name: "Office supplies", type: "expense", color: "#28634a" },
+  })).json();
   const base = url + `/api/transactions/${tx.id}/attachments`;
   const source = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
@@ -163,6 +167,44 @@ try {
   const emptyRow = page
     .getByRole("row")
     .filter({ hasText: "Synthetic transaction without receipts" });
+  for (const name of ["Description", "Merchant", "Category"])
+    await expect(page.getByRole("columnheader", { name, exact: true })).toBeVisible();
+  const merchantPencil = receiptRow.getByRole("button", { name: /^Edit merchant for/ });
+  await merchantPencil.click();
+  const merchant = receiptRow.getByRole("textbox", { name: "Merchant" });
+  await expect(merchant).toBeFocused();
+  await merchant.fill("Discard this edit");
+  await merchant.press("Escape");
+  await expect(merchantPencil).toBeFocused();
+  await merchantPencil.click();
+  await merchant.fill("Paper Supply Co.");
+  await merchant.press("Enter");
+  await expect(receiptRow.getByText("Paper Supply Co.", { exact: true })).toBeVisible();
+  await receiptRow.getByRole("button", { name: /^Edit description for/ }).click();
+  const newDescription = "Synthetic attachment transaction · office order";
+  await receiptRow.getByRole("textbox", { name: "Description" }).fill(newDescription);
+  await receiptRow.getByRole("button", { name: "Save description" }).click();
+  await expect(receiptRow.getByRole("button", { name: newDescription, exact: true })).toBeVisible();
+  await receiptRow.getByRole("button", { name: /^Edit category for/ }).click();
+  await receiptRow.getByRole("combobox", { name: "Category" }).selectOption(category.id);
+  await receiptRow.getByRole("button", { name: "Save category" }).click();
+  await expect(receiptRow.getByText("Office supplies", { exact: true })).toBeVisible();
+  await expect(page.locator("dialog.transaction-editor")).toHaveCount(0);
+  await page.reload();
+  await expect(receiptRow.getByText("Paper Supply Co.", { exact: true })).toBeVisible();
+  await expect(receiptRow.getByText("Office supplies", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "/tmp/phooey-inline-ledger.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await merchantPencil.click();
+  await expect(merchant).toHaveValue("Paper Supply Co.");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: "/tmp/phooey-inline-mobile.png" });
+  await merchant.press("Escape");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await receiptRow.getByRole("button", { name: /^Edit description for/ }).click();
+  await receiptRow.getByRole("textbox", { name: "Description" }).fill("Synthetic attachment transaction");
+  await receiptRow.getByRole("button", { name: "Save description" }).click();
+  await expect(receiptRow.getByRole("button", { name: "Synthetic attachment transaction", exact: true })).toBeVisible();
   const uploadButton = emptyRow.getByRole("button", {
     name: /^Upload receipts for/,
   });

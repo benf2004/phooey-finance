@@ -337,4 +337,24 @@ describe("real Worker and D1 integration", () => {
     expect(((await token.json()) as any).access_token).toBeTruthy();
     expect((await exchange()).status).toBe(400);
   });
+  it("edits a single ledger field without replacing splits or overwriting a concurrent edit", async () => {
+    const created = await json("/api/transactions", "POST", {
+      account_id: account, posted: "2026-11-18", amount: -100, description: "Split order",
+      notes: "Keep", type: "expense", reviewed: false, tags: ["Travel"],
+      splits: [{ amount: -100, category_id: "office", type: "expense" }],
+    });
+    const path = "/api/transactions/" + created.id;
+    const payload = { revision: created.revision, edit: { field: "merchant", value: "Stationery shop" } };
+    const headers = { "Idempotency-Key": "inline-merchant-retry" };
+    const before = await json(path);
+    const result = await json(path, "PATCH", payload, headers);
+    expect(await json(path, "PATCH", payload, headers)).toEqual(result);
+    expect((await req(path, "PATCH", { ...payload, edit: { field: "description", value: "Stale edit" } })).status).toBe(409);
+    expect((await req(path, "PATCH", { revision: result.revision, edit: { field: "category_id", value: "office" } })).status).toBe(409);
+    expect((await req(path, "PATCH", { revision: result.revision, edit: { field: "amount", value: "1" } })).status).toBe(400);
+    expect(await json(path)).toMatchObject({
+      revision: created.revision + 1, merchant: "Stationery shop", splits: before.splits,
+      amount: -100, notes: "Keep", reviewed: 0, tags: ["Travel"], description: "Split order",
+    });
+  });
 });

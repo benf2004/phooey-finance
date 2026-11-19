@@ -1,0 +1,84 @@
+.transactions-table .transaction-merchant {
+  min-width: 108px;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+.ledger-field,
+.ledger-category-trigger,
+.ledger-field-actions,
+.ledger-field-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ledger-field > :first-child {
+  min-width: 0;
+}
+.ledger-pencil,
+.ledger-category-trigger,
+.ledger-field-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.ledger-pencil {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 25px;
+  height: 26px;
+  padding: 0;
+}
+.ledger-pencil:hover,
+.ledger-category-trigger:hover,
+.ledger-field-actions button:hover {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.ledger-category-trigger {
+  min-height: 26px;
+  padding: 2px;
+  text-align: left;
+}
+.ledger-category-trigger svg {
+  flex-shrink: 0;
+}
+.ledger-field-editor {
+  min-width: 142px;
+  padding-block: 2px;
+}
+.ledger-field-editor :is(input, select) {
+  min-height: 32px;
+  padding: 4px 7px;
+  font-size: 13px;
+}
+.ledger-field-editor select {
+  padding-right: 24px;
+}
+.ledger-field-actions {
+  margin-top: 3px;
+}
+.ledger-field-actions button {
+  min-height: 25px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+.ledger-field-actions button[type="submit"] {
+  color: var(--green);
+  font-weight: 600;
+}
+.ledger-field-error {
+  color: var(--red);
+  white-space: normal;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .ledger-pencil,
+  .ledger-category-trigger,
+  .ledger-field-actions button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

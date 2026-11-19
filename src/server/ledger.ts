@@ -10,6 +10,7 @@ import {
   type Rule,
   type Transaction,
   type TransactionInput,
+  type TransactionFieldEdit,
   type Filters,
 } from "../shared/models";
 import { assert, id, hash, AppError } from "./util";
@@ -485,6 +486,48 @@ export class Ledger {
         );
       throw e;
     }
+    return result;
+  }
+  async editTransactionField(key: string, edit: TransactionFieldEdit, revision: number, requestKey?: string) {
+    const request = await this.prepareRequest<{ revision: number }>(
+      "transaction.edit-field", { key, edit, revision }, requestKey,
+    );
+    if (request.prior) return request.prior;
+    const tx = await this.db.prepare(
+      `SELECT t.description,t.merchant,t.category_id,t.type,t.revision,t.transfer_id,
+        EXISTS(SELECT 1 FROM splits WHERE transaction_id=t.id) AS has_splits
+       FROM transactions t JOIN accounts a ON a.id=t.account_id
+       WHERE t.id=? AND t.deleted=0 AND a.archived=0`,
+    ).bind(key).first<Pick<Transaction, "description" | "merchant" | "category_id" | "type" | "revision" | "transfer_id"> & { has_splits: number }>();
+    assert(tx, 404, "Transaction not found");
+    assert(tx.revision === revision, 409, "This transaction changed. Cancel and reopen the field to see its latest value.");
+    let update: D1PreparedStatement;
+    if (edit.field === "category_id") {
+      assert(!tx.has_splits && !tx.transfer_id, 409, "Manage split or linked transactions in the transaction editor.");
+      const category = edit.value ? await this.db.prepare("SELECT type FROM categories WHERE id=?")
+        .bind(edit.value).first<Pick<Category, "type">>() : null;
+      assert(!edit.value || category, 400, "Category no longer exists.");
+      update = this.db.prepare(
+        "UPDATE transactions SET category_id=?,type=?,user_edited=1,rule_id=NULL,revision=revision+1 WHERE id=?",
+      ).bind(edit.value, category?.type ?? tx.type, key);
+    } else {
+      // The discriminated schema limits this column to description or merchant.
+      update = this.db.prepare(
+        `UPDATE transactions SET ${edit.field}=?,user_edited=1,revision=revision+1 WHERE id=?`,
+      ).bind(edit.value, key);
+    }
+    const guard = id();
+    const result = { revision: revision + 1 };
+    await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO write_guards VALUES(?,EXISTS(SELECT 1 FROM transactions t JOIN accounts a ON a.id=t.account_id
+          WHERE t.id=? AND t.revision=? AND t.deleted=0 AND a.archived=0))`,
+      ).bind(guard, key, revision),
+      update,
+      this.auditStatement("transaction.update", key, { [edit.field]: tx[edit.field] }, { [edit.field]: edit.value }),
+      ...request.statements(result),
+      this.db.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+    ]);
     return result;
   }
   async deleteTransaction(key: string, revision: number) {

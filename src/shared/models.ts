@@ -63,13 +63,22 @@ export const splitSchema = z.object({
   type: typeSchema,
   notes: z.string().max(2000).default(""),
 });
+const descriptionSchema = z.string().trim().min(1).max(500);
+const merchantSchema = z.string().max(200);
+export const transactionFieldSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("description"), value: descriptionSchema }),
+  z.object({ field: z.literal("merchant"), value: merchantSchema }),
+  z.object({ field: z.literal("category_id"), value: z.string().min(1).nullable() }),
+]);
+export type TransactionFieldEdit = z.infer<typeof transactionFieldSchema>;
+
 export const transactionSchema = z
   .object({
     account_id: z.string().min(1),
     posted: dateSchema,
     amount: moneySchema,
-    description: z.string().trim().min(1).max(500),
-    merchant: z.string().max(200).default(""),
+    description: descriptionSchema,
+    merchant: merchantSchema.default(""),
     category_id: z.string().nullable().default(null),
     type: typeSchema,
     notes: z.string().max(4000).default(""),
