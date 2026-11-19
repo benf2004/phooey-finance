@@ -247,6 +247,15 @@ try {
       exact: true,
     }),
   ).toBeVisible();
+  await page.getByLabel("Filter by category").selectOption(category.id);
+  await receiptRow.getByRole("checkbox").check();
+  await receiptRow.getByRole("button", { name: /^Edit category for/ }).click();
+  await receiptRow.getByRole("combobox", { name: "Category" }).selectOption("");
+  await receiptRow.getByRole("button", { name: "Save category" }).click();
+  await expect(receiptRow).toHaveCount(0);
+  await expect(page.getByText("1 selected", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Filter by category").selectOption("");
+  await expect(receiptRow).toBeVisible();
   const uploadButton = emptyRow.getByRole("button", {
     name: /^Upload receipts for/,
   });
