@@ -173,6 +173,7 @@ export type Transaction = Omit<
   attachment_count: number;
   transfer_id: string | null;
 };
+export const defaultMcpTokenDays = 365;
 export const scopes = [
   "finance:read",
   "transactions:write",

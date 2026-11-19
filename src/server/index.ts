@@ -30,7 +30,7 @@ import {
   errorMessage,
 } from "./util";
 import { Ledger } from "./ledger";
-import { dateSchema, scopeSchema, filterSchema, transactionFieldSchema } from "../shared/models";
+import { dateSchema, defaultMcpTokenDays, scopeSchema, filterSchema, transactionFieldSchema } from "../shared/models";
 import { taxState, taxLedger, saveTax, addPayment } from "./taxes";
 import {
   connectSimplefin,
@@ -535,7 +535,7 @@ app.post("/api/tokens", async (c) => {
     .object({
       name: z.string().min(1).max(100),
       scopes: scopeSchema,
-      days: z.number().int().min(1).max(365),
+      days: z.number().int().min(1).max(365).default(defaultMcpTokenDays),
     })
     .parse(await readJSON(c.req.raw));
   return c.json(await issueToken(c.env, data.name, data.scopes, data.days));
