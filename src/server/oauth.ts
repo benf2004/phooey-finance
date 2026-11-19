@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { type AppEnv, issueToken, rateLimit } from "./auth";
 import { assert, hash, id, now, randomToken } from "./util";
-import { scopes, scopeSchema } from "../shared/models";
+import { defaultMcpTokenDays, scopes, scopeSchema } from "../shared/models";
 export function oauthMetadata(origin: string) {
   return {
     issuer: origin,
@@ -176,7 +176,7 @@ export async function exchangeCode(
     env,
     client?.name ?? "MCP client",
     scopeSchema.parse(JSON.parse(code.scopes)),
-    1,
+    defaultMcpTokenDays,
     code.client_id,
   );
   return {

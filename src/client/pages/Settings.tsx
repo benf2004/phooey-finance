@@ -28,7 +28,7 @@ import {
   ErrorNotice,
   useAsync,
 } from "../ui";
-import { scopes, type Scope } from "../../shared/models";
+import { defaultMcpTokenDays, scopes, type Scope } from "../../shared/models";
 type Sync = {
   connection: BankConnectionState | null;
   jobs: {
@@ -401,7 +401,7 @@ function TokenDialog({
 }) {
   const [name, setName] = useState("Personal assistant"),
     [permissions, setPermissions] = useState<Scope[]>(["finance:read"]),
-    [days, setDays] = useState(30),
+    [days, setDays] = useState(defaultMcpTokenDays),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
   return (

@@ -2,9 +2,9 @@
 
 Endpoint: `https://YOUR-WORKER.workers.dev/mcp`. Transport: Streamable HTTP. The dashboard Settings page shows the exact URL.
 
-Clients supporting OAuth discover the authorization server from the unauthenticated response, register a redirect, and open the admin login/consent screen. Authorization requires PKCE S256 and a resource of the exact MCP URL. Access tokens expire after one day; clients reauthorize (refresh tokens are not issued).
+Clients supporting OAuth discover the authorization server from the unauthenticated response, register a redirect, and open the admin login/consent screen. Authorization requires PKCE S256 and a resource of the exact MCP URL. OAuth access tokens expire after 365 days. Clients reauthorize at expiry because the server does not issue refresh tokens.
 
-For clients using a manually configured bearer token, create one in Settings with the minimum required scopes, then add `Authorization: Bearer TOKEN` to the client's request headers. Tokens expire in 1–365 days and can be revoked individually. Never put a token in a URL.
+For clients using a manually configured bearer token, create one in Settings with the minimum required scopes, then add `Authorization: Bearer TOKEN` to the client's request headers. The default lifetime is 365 days. You can choose any lifetime from 1 to 365 days and revoke individual tokens in Settings. Never put a token in a URL.
 
 | Scope                | Tools                                                                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -248,12 +248,20 @@ describe("real Worker and D1 integration", () => {
       ).status,
     ).toBe(409);
   });
+  it("defaults personal access tokens to 365 days", async () => {
+    const token = await json("/api/tokens", "POST", {
+      name: "Default lifetime",
+      scopes: ["finance:read"],
+    });
+    expect(token.expires_in).toBe(365 * 86400);
+  });
   it("serves MCP tools and enforces read-only token scopes", async () => {
     const token = await json("/api/tokens", "POST", {
       name: "Test reader",
       scopes: ["finance:read"],
       days: 1,
     });
+    expect(token.expires_in).toBe(86400);
     const call = async (method: string, params: unknown) => {
       const response = await req(
         "/mcp",
@@ -334,7 +342,10 @@ describe("real Worker and D1 integration", () => {
       });
     const token = await exchange();
     expect(token.status).toBe(200);
-    expect(((await token.json()) as any).access_token).toBeTruthy();
+    expect(await token.json()).toMatchObject({
+      access_token: expect.any(String),
+      expires_in: 365 * 86400,
+    });
     expect((await exchange()).status).toBe(400);
   });
   it("edits a single ledger field without replacing splits or overwriting a concurrent edit", async () => {
