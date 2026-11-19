@@ -82,3 +82,14 @@
     min-width: 44px;
   }
 }
+
+.ledger-category-trigger .badge {
+  max-width: 16ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Keep the amount's screen-reader text inside the horizontally scrolling table. */
+.transactions-table .transaction-amount {
+  position: relative;
+}

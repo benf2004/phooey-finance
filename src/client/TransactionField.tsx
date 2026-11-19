@@ -46,7 +46,8 @@ export function TransactionField({
   const editing = draft !== null;
   useLayoutEffect(() => {
     if (!editing && restoreFocus.current) {
-      trigger.current?.focus({ preventScroll: true });
+      if (document.activeElement === document.body)
+        trigger.current?.focus({ preventScroll: true });
       restoreFocus.current = false;
     }
   }, [editing]);
@@ -175,7 +176,11 @@ export function TransactionField({
         className={
           field === "category_id" ? "ledger-category-trigger" : "ledger-pencil"
         }
-        aria-label={action}
+        aria-label={
+          field === "category_id"
+            ? `${action}. Current category: ${transaction.category_name ?? "Uncategorized"}`
+            : action
+        }
         title={action}
         onClick={() => {
           setError("");

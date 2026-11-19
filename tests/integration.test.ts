@@ -347,7 +347,10 @@ describe("real Worker and D1 integration", () => {
     const payload = { revision: created.revision, edit: { field: "merchant", value: "Stationery shop" } };
     const headers = { "Idempotency-Key": "inline-merchant-retry" };
     const before = await json(path);
-    const result = await json(path, "PATCH", payload, headers);
+    const [result, duplicate] = await Promise.all([
+      json(path, "PATCH", payload, headers), json(path, "PATCH", payload, headers),
+    ]);
+    expect(duplicate).toEqual(result);
     expect(await json(path, "PATCH", payload, headers)).toEqual(result);
     expect((await req(path, "PATCH", { ...payload, edit: { field: "description", value: "Stale edit" } })).status).toBe(409);
     expect((await req(path, "PATCH", { revision: result.revision, edit: { field: "category_id", value: "office" } })).status).toBe(409);

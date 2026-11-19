@@ -163,7 +163,7 @@ try {
   ).toBeVisible();
   const receiptRow = page
     .getByRole("row")
-    .filter({ hasText: "Synthetic attachment transaction" });
+    .filter({ has: page.getByRole("checkbox", { name: /^Select Synthetic attachment transaction/ }) });
   const emptyRow = page
     .getByRole("row")
     .filter({ hasText: "Synthetic transaction without receipts" });
@@ -197,8 +197,8 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await merchantPencil.click();
   await expect(merchant).toHaveValue("Paper Supply Co.");
+  await page.screenshot({ path: "/tmp/phooey-inline-mobile.png", animations: "disabled" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: "/tmp/phooey-inline-mobile.png" });
   await merchant.press("Escape");
   await page.setViewportSize({ width: 1280, height: 900 });
   await receiptRow.getByRole("button", { name: /^Edit description for/ }).click();

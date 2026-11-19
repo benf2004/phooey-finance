@@ -489,16 +489,17 @@ export class Ledger {
     return result;
   }
   async editTransactionField(key: string, edit: TransactionFieldEdit, revision: number, requestKey?: string) {
-    const request = await this.prepareRequest<{ revision: number }>(
-      "transaction.edit-field", { key, edit, revision }, requestKey,
-    );
-    if (request.prior) return request.prior;
     const tx = await this.db.prepare(
       `SELECT t.description,t.merchant,t.category_id,t.type,t.revision,t.transfer_id,
         EXISTS(SELECT 1 FROM splits WHERE transaction_id=t.id) AS has_splits
        FROM transactions t JOIN accounts a ON a.id=t.account_id
        WHERE t.id=? AND t.deleted=0 AND a.archived=0`,
     ).bind(key).first<Pick<Transaction, "description" | "merchant" | "category_id" | "type" | "revision" | "transfer_id"> & { has_splits: number }>();
+    const readRequest = () => this.prepareRequest<{ revision: number }>(
+      "transaction.edit-field", { key, edit, revision }, requestKey,
+    );
+    const request = await readRequest();
+    if (request.prior) return request.prior;
     assert(tx, 404, "Transaction not found");
     assert(tx.revision === revision, 409, "This transaction changed. Cancel and reopen the field to see its latest value.");
     let update: D1PreparedStatement;
@@ -518,6 +519,7 @@ export class Ledger {
     }
     const guard = id();
     const result = { revision: revision + 1 };
+    try {
     await this.db.batch([
       this.db.prepare(
         `INSERT INTO write_guards VALUES(?,EXISTS(SELECT 1 FROM transactions t JOIN accounts a ON a.id=t.account_id
@@ -528,6 +530,13 @@ export class Ledger {
       ...request.statements(result),
       this.db.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
     ]);
+    } catch (error) {
+      if (requestKey) {
+        const replay = await readRequest();
+        if (replay.prior) return replay.prior;
+      }
+      throw error;
+    }
     return result;
   }
   async deleteTransaction(key: string, revision: number) {
