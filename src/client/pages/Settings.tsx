@@ -55,7 +55,7 @@ const settingsTabs = [
 ] as const;
 type SettingsTab = (typeof settingsTabs)[number]["id"];
 export default function Settings() {
-  const { version, refresh, notify, sourceUrl, navigate } = useWorkspace();
+  const { hosted, keyAuth, version, refresh, notify, sourceUrl, navigate } = useWorkspace();
   const requestedTab = new URLSearchParams(location.search).get("tab");
   const activeTab = settingsTabs.find((tab) => tab.id === requestedTab)?.id ?? "connections";
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -313,18 +313,18 @@ export default function Settings() {
       </SettingsTabPanel>
       <SettingsTabPanel active={activeTab} id="profile">
         <ProfileSettings />
-        <PasswordSettings />
+        {hosted ? <a href="/cloud/account">Manage your hosted account</a> : keyAuth ? <p>Rotate your admin key in your Worker secrets.</p> : <PasswordSettings />}
       </SettingsTabPanel>
       <SettingsTabPanel active={activeTab} id="appearance">
         <ThemeSettings />
         <AppearanceSettings />
       </SettingsTabPanel>
       <details className="details settings-about">
-        <summary>About Phooey Finance</summary>
+        <summary>About phooey! finance</summary>
         <Panel title="About" action={<ShieldCheck size={19} className="muted" />}>
           <div className="panel-body">
             <p>
-              Phooey Finance runs in your Cloudflare account. Administrator
+              phooey! finance runs in your Cloudflare account. Administrator
               credentials start with server secrets; you can change your
               password here. No analytics or telemetry are added by the application.
             </p>

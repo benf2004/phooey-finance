@@ -1,8 +1,12 @@
+import { timingSafeEqual } from "node:crypto";
 import { compare, hash as passwordHash } from "bcryptjs";
 import { assert, hash, now, randomToken, id } from "./util";
 import { scopeSchema, type Scope } from "../shared/models";
 import { passwordChangeSchema } from "../shared/password";
 export type AppEnv = Env & {
+  hostedCustomer?: string;
+  invoicerUrl?: string;
+  ADMIN_KEY?: string;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD_HASH: string;
   ENCRYPTION_KEY: string;
@@ -50,7 +54,7 @@ async function credentials(env: AppEnv) {
   };
 }
 export async function credentialVersion(env: AppEnv) {
-  return (await credentials(env)).version;
+  return env.ADMIN_KEY ? hash("admin-key:" + env.ADMIN_KEY) : (await credentials(env)).version;
 }
 export async function login(
   env: AppEnv,
@@ -58,6 +62,14 @@ export async function login(
   password: string,
   ip: string,
 ) {
+  if (env.ADMIN_KEY) {
+    assert(env.ADMIN_KEY.length >= 32, 503, "Configure an admin key of at least 32 characters.");
+    await rateLimit(env.DB, "login:" + ip, 10, 900);
+    const digest = (value: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    const [entered, expected] = await Promise.all([digest(password), digest(env.ADMIN_KEY)]);
+    assert(timingSafeEqual(new Uint8Array(entered), new Uint8Array(expected)), 401, "Incorrect admin key.");
+    return createSession(env, await credentialVersion(env));
+  }
   assert(
     env.ADMIN_USERNAME && env.ADMIN_PASSWORD_HASH,
     503,
@@ -71,11 +83,14 @@ export async function login(
     401,
     "Username or password is incorrect.",
   );
+  return createSession(env, credential.version);
+}
+async function createSession(env: AppEnv, version: string) {
   const token = randomToken();
   await env.DB.prepare(
     "INSERT INTO sessions(token_hash,expires_at,credential_version) VALUES(?,?,?)",
   )
-    .bind(await hash(token), now() + 86400, credential.version)
+    .bind(await hash(token), now() + 86400, version)
     .run();
   return token;
 }
@@ -84,6 +99,7 @@ export async function changePassword(
   request: Request,
   input: unknown,
 ) {
+  assert(!env.ADMIN_KEY, 403, "Rotate ADMIN_KEY in your Worker secrets.");
   const { currentPassword, newPassword } = passwordChangeSchema.parse(input);
   const token = cookieToken(request);
   assert(token, 401, "Please sign in");

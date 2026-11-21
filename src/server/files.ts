@@ -420,7 +420,7 @@ export async function backup(ledger: Ledger) {
   const results = await ledger.db.batch([
     ...tables.map((table) =>
       ledger.db.prepare(
-        `SELECT * FROM ${table}${table === "settings" ? " WHERE key LIKE 'tax:%' OR key='saved-filters' OR key='preferences'" : ""}`,
+        `SELECT * FROM ${table}${table === "settings" ? " WHERE key LIKE 'tax:%' OR key LIKE 'budget/%' OR key='saved-filters' OR key='preferences'" : ""}`,
       ),
     ),
     ledger.db.prepare(
@@ -485,11 +485,12 @@ export async function restore(ledger: Ledger, input: unknown) {
   for (const s of data.tables.settings) {
     assert(
       typeof s.key === "string" &&
-        (s.key.startsWith("tax:") ||
+        (s.key.startsWith("tax:") || /^budget\/(?:20\d{2}|2100)\/[A-Z]{3}\/(?:0[1-9]|1[0-2])\/[^/]{1,80}$/.test(s.key) ||
           ["saved-filters", "preferences"].includes(s.key)),
       400,
       "Invalid setting in backup",
     );
+    if (s.key.startsWith("budget/")) z.coerce.number().int().nonnegative().max(1e12).parse(s.value);
     if (s.key.startsWith("tax:")) taxSchema.parse(JSON.parse(String(s.value)));
   }
   const restoreGuard = id();

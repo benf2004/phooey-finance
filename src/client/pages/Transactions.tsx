@@ -1,3 +1,5 @@
+import { ViewSwitch, useGridView } from "../LedgerGrid";
+import { TransactionGrid } from "../TransactionGrid";
 import { useEffect, useState, useRef } from "react";
 import {
   Plus,
@@ -463,6 +465,8 @@ function categoryBadgeStyle(color?: string) {
   };
 }
 export default function Transactions() {
+  const tagsOnly = location.pathname === "/tags";
+  const view = useGridView("transactions");
   const { accounts, categories, version, refresh, navigate, notify } =
     useWorkspace();
   const receiptUpload = useAttachmentUpload();
@@ -532,7 +536,7 @@ export default function Transactions() {
       else p.delete(key);
     }
     if (!("page" in values)) p.delete("page");
-    navigate("/transactions?" + p.toString());
+    navigate(location.pathname + "?" + p.toString());
   }
   function closeEditor() {
     setEditor(null);
@@ -540,7 +544,7 @@ export default function Transactions() {
     const p = new URLSearchParams(location.search);
     p.delete("new");
     p.delete("edit");
-    navigate("/transactions?" + p.toString());
+    navigate(location.pathname + "?" + p.toString());
   }
   function openEditor(id: string, attachments = false) {
     setFocusAttachments(attachments);
@@ -550,7 +554,7 @@ export default function Transactions() {
     const category = edit.field === "category_id" ? categories.find((c) => c.id === edit.value) : null;
     const changes = edit.field === "category_id"
       ? { category_id: edit.value, category_name: category?.name ?? null, type: category?.type ?? original.type }
-      : { [edit.field]: edit.value };
+      : edit.field === "reviewed" ? { reviewed: Number(edit.value) } : { [edit.field]: edit.value };
     data.setData((page) => page && ({
       ...page,
       items: page.items.map((row) => row.id === original.id && row.revision === original.revision
@@ -564,7 +568,7 @@ export default function Transactions() {
   return (
     <>
       <PageHeading
-        title="Transactions"
+        title={tagsOnly ? "Tags" : "Transactions"}
         actions={
           <>
             <Button variant="secondary" onClick={() => setImporting(true)}>
@@ -581,6 +585,10 @@ export default function Transactions() {
           </>
         }
       />
+      {tagsOnly ? <div className="tag-shelf" role="group" aria-label="Filter tag assignments">
+        <button aria-pressed={!params.get("tag")} onClick={()=>change("tag","")}>All transactions</button>
+        {tags.data?.map(tag=><button key={tag} aria-pressed={params.get("tag")===tag} onClick={()=>change("tag",tag)}>{tag}</button>)}
+      </div> : <ViewSwitch {...view} normal="Ledger"/>}
       <div className="toolbar">
         <form
           className="search-box"
@@ -838,7 +846,7 @@ export default function Transactions() {
           <Loading />
         ) : items.length ? (
           <>
-            <div className="table-scroll">
+            {tagsOnly || view.grid ? <TransactionGrid rows={items} tagsOnly={tagsOnly} onSaved={fieldSaved}/> : <div className="table-scroll">
               <table className="transactions-table">
                 <thead>
                   <tr>
@@ -1007,7 +1015,7 @@ export default function Transactions() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </div>}
             <div className="pagination">
               <span>
                 {(data.data!.page - 1) * data.data!.limit + 1}–

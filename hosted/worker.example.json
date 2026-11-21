@@ -1,0 +1,49 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "phooey-hosted-preview",
+  "main": "../src/hosted/worker.ts",
+  "compatibility_date": "2026-11-17",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "triggers": {
+    "crons": [
+      "17 6,18 * * *"
+    ]
+  },
+  "limits": {
+    "cpu_ms": 30000
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
+  "vars": {
+    "PORTAL_ORIGIN": "https://finance.example.com",
+    "IDENTITY_ORIGIN": "https://example.auth0.com",
+    "IDENTITY_CLIENT": "",
+    "GOOGLE_CLIENT": "",
+    "STRIPE_PRICE": "",
+    "SUPPORT_EMAIL": "support@example.com",
+    "SOURCE_URL": "https://github.com/benf2004/phooey-finance"
+  },
+  "d1_databases": [
+    {
+      "binding": "CONTROL",
+      "database_name": "phooey-hosted-control",
+      "database_id": "00000000-0000-4000-8000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/build-source.mjs",
+    "build": "vite build && node scripts/build-source.mjs && node scripts/bundle-hosted.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm run build && npm test",
@@ -15,7 +15,10 @@
     "cf:types": "wrangler types",
     "deploy": "CLOUDFLARE_ENV=production npm run build && wrangler deploy",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "db:migrate:production": "wrangler d1 migrations apply phooey-finance --remote --env production"
+    "db:migrate:production": "wrangler d1 migrations apply phooey-finance --remote --env production",
+    "hosted:launch": "node scripts/launch-hosted.mjs",
+    "hosted:auth": "node scripts/deploy-melody.mjs deploy",
+    "hosted:configure": "node scripts/configure-hosted.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
@@ -26,7 +29,10 @@
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "jose": "^6.2.17",
+    "@simplewebauthn/server": "14.0.2",
+    "@simplewebauthn/browser": "14.0.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.69.1",

@@ -1,0 +1,1 @@
+CREATE TABLE alert_delivery(slot TEXT NOT NULL,event TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(slot,event));

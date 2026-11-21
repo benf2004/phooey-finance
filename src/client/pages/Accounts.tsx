@@ -1,3 +1,5 @@
+import { ViewSwitch, useGridView } from "../LedgerGrid";
+import { CatalogGrid } from "../CatalogGrid";
 import { DeleteAccountButton } from "./DeleteAccount";
 import { useState } from "react";
 import {
@@ -25,6 +27,7 @@ import { formatMoney } from "../../shared/money";
 import type { Account } from "../../shared/models";
 import { formatEnumLabel } from "../labels";
 export default function Accounts() {
+  const view=useGridView("accounts");
   const { accounts, navigate, refresh, notify } = useWorkspace();
   const [edit, setEdit] = useState<Account | null | undefined>(undefined),
     [history, setHistory] = useState<Account | null>(null);
@@ -45,7 +48,8 @@ export default function Accounts() {
           </>
         }
       />
-      {accounts.length ? (
+      <ViewSwitch {...view} normal="Cards"/>
+      {view.grid && accounts.length ? <CatalogGrid table="accounts"/> : accounts.length ? (
         <div className="account-grid">
           {accounts.map((a) => (
             <section className="panel account-card" key={a.id}>

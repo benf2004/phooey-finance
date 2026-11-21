@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "invoicer",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "invoicer", "database_id": "b391c712-c6a3-48ba-af32-718c955ae16b", "migrations_dir": "migrations" }],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "env": {
+    "staging": {
+      "name": "invoicer-staging",
+      "d1_databases": [{ "binding": "DB", "database_name": "invoicer-staging", "migrations_dir": "migrations" }]
+    }
+  }
+}

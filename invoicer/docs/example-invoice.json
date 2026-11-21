@@ -1,0 +1,21 @@
+{
+  "status": "issued",
+  "business": { "name": "Your Studio", "address": "123 Market Street\nDenver, CO 80202", "email": "hello@example.com" },
+  "billTo": { "name": "Acme Ltd", "address": "456 Main Street", "email": "billing@example.com" },
+  "date": "2026-10-07",
+  "dueDate": "2026-11-06",
+  "paymentTerms": "Net 30",
+  "currency": "USD",
+  "items": [
+    { "description": "Creative direction and design", "quantity": "2.5", "rate": "120" },
+    { "description": "Project setup", "quantity": "1", "rate": "50" }
+  ],
+  "discount": { "type": "percent", "value": "5" },
+  "tax": { "type": "percent", "value": "8.25" },
+  "shipping": "0",
+  "amountPaid": "0",
+  "notes": "Thank you for your business.",
+  "terms": "Please pay by bank transfer within 30 days.",
+  "customFields": [{ "label": "Project", "value": "Brand refresh" }],
+  "branding": { "template": "modern", "accentColor": "#5367df", "font": "sans", "paper": "letter" }
+}

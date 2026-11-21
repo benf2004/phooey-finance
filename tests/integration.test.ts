@@ -92,6 +92,22 @@ describe("real Worker and D1 integration", () => {
     other = (await json("/api/accounts", "POST", { name: "Savings" })).id;
     expect((await json("/api/accounts")).length).toBe(2);
   });
+  it("persists Foundation budget targets per category, month, year and currency", async () => {
+    await json("/api/foundation/2026/budget", "PUT", {
+      category: "office",
+      month: 2,
+      currency: "USD",
+      amount: 5000,
+    });
+    const data = await json("/api/foundation/2026");
+    expect(data.budgets["USD/02/office"]).toBe(5000);
+    expect((await json("/api/foundation/2025")).budgets).toEqual({});
+    expect(
+      (await json("/api/backup")).tables.settings.some(
+        (s: { key: string }) => s.key === "budget/2026/USD/02/office",
+      ),
+    ).toBe(true);
+  });
   it("makes transaction creation and edits retry-safe", async () => {
     const transaction = {
       account_id: account,
@@ -288,6 +304,22 @@ describe("real Worker and D1 integration", () => {
       arguments: {},
     });
     expect(read.result.isError).not.toBe(true);
+    const feed = await call("tools/call", {
+      name: "get_tiller_feed",
+      arguments: { from: "2026-01-01" },
+    });
+    expect(feed.result.isError).not.toBe(true);
+    const snapshot = JSON.parse(feed.result.content[0].text);
+    expect(
+      snapshot.accounts.some((entry: { id: string }) => entry.id === account),
+    ).toBe(true);
+    expect(
+      snapshot.transactions.every(
+        (entry: { posted: string; tags: unknown }) =>
+          entry.posted >= "2026-01-01" && Array.isArray(entry.tags),
+      ),
+    ).toBe(true);
+    expect(Array.isArray(snapshot.balances)).toBe(true);
     const denied = await call("tools/call", {
       name: "create_transaction",
       arguments: {
@@ -350,25 +382,62 @@ describe("real Worker and D1 integration", () => {
   });
   it("edits a single ledger field without replacing splits or overwriting a concurrent edit", async () => {
     const created = await json("/api/transactions", "POST", {
-      account_id: account, posted: "2026-11-18", amount: -100, description: "Split order",
-      notes: "Keep", type: "expense", reviewed: false, tags: ["Travel"],
+      account_id: account,
+      posted: "2026-11-18",
+      amount: -100,
+      description: "Split order",
+      notes: "Keep",
+      type: "expense",
+      reviewed: false,
+      tags: ["Travel"],
       splits: [{ amount: -100, category_id: "office", type: "expense" }],
     });
     const path = "/api/transactions/" + created.id;
-    const payload = { revision: created.revision, edit: { field: "merchant", value: "Stationery shop" } };
+    const payload = {
+      revision: created.revision,
+      edit: { field: "merchant", value: "Stationery shop" },
+    };
     const headers = { "Idempotency-Key": "inline-merchant-retry" };
     const before = await json(path);
     const [result, duplicate] = await Promise.all([
-      json(path, "PATCH", payload, headers), json(path, "PATCH", payload, headers),
+      json(path, "PATCH", payload, headers),
+      json(path, "PATCH", payload, headers),
     ]);
     expect(duplicate).toEqual(result);
     expect(await json(path, "PATCH", payload, headers)).toEqual(result);
-    expect((await req(path, "PATCH", { ...payload, edit: { field: "description", value: "Stale edit" } })).status).toBe(409);
-    expect((await req(path, "PATCH", { revision: result.revision, edit: { field: "category_id", value: "office" } })).status).toBe(409);
-    expect((await req(path, "PATCH", { revision: result.revision, edit: { field: "amount", value: "1" } })).status).toBe(400);
+    expect(
+      (
+        await req(path, "PATCH", {
+          ...payload,
+          edit: { field: "description", value: "Stale edit" },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await req(path, "PATCH", {
+          revision: result.revision,
+          edit: { field: "category_id", value: "office" },
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await req(path, "PATCH", {
+          revision: result.revision,
+          edit: { field: "amount", value: "1" },
+        })
+      ).status,
+    ).toBe(400);
     expect(await json(path)).toMatchObject({
-      revision: created.revision + 1, merchant: "Stationery shop", splits: before.splits,
-      amount: -100, notes: "Keep", reviewed: 0, tags: ["Travel"], description: "Split order",
+      revision: created.revision + 1,
+      merchant: "Stationery shop",
+      splits: before.splits,
+      amount: -100,
+      notes: "Keep",
+      reviewed: 0,
+      tags: ["Travel"],
+      description: "Split order",
     });
   });
 });

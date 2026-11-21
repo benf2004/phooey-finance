@@ -1,6 +1,8 @@
-# Phooey Finance
+# phooey! finance
 
-A self-hosted, AGPL finance dashboard for one administrator. Built with React, TypeScript, Hono and Cloudflare Workers, D1, R2 and Queues. No spreadsheet dependency, analytics, or AI service required.
+[Deploy the hosted Finance + Invoicer bundle on Cloudflare](docs/cloudflare-quickstart.md)
+
+A bookkeeping and invoicing workspace for solopreneurs. The Cloudflare-hosted edition pairs Finance and Invoicer for $29/year with separate optional SimpleFIN Bridge syncing. The AGPL self-hosted editions support one admin key each. Built with React, TypeScript, Hono and Cloudflare Workers, D1, R2 and Queues. No spreadsheet dependency, analytics, or AI service required.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/benf2004/phooey-finance)
 
@@ -25,7 +27,7 @@ npm run db:migrate
 npm run dev
 ```
 
-The setup command generates a local admin password and prints it once. Secrets live in ignored `.dev.vars`. Open the URL printed by Vite. Local D1, R2 and Queues run under `.wrangler/`; they do not use production data.
+The setup command generates a local admin key. Read ADMIN_KEY from .dev.vars to sign in. Existing username/password installations continue to work. Secrets live in ignored `.dev.vars`. Open the URL printed by Vite. Local D1, R2 and Queues run under `.wrangler/`; they do not use production data.
 
 Optional: `npm run seed:demo` loads clearly labeled example accounts and transactions into the **local** database. Never seed production. The server is still protected by the local admin login.
 
@@ -88,3 +90,9 @@ The frontend uses a system font and compact tables; tax inputs and longer explan
 ## License
 
 AGPL-3.0-only; see [LICENSE](LICENSE). Each build serves its corresponding source at `/source.tar.gz`, including build instructions and excluding secrets/data. The repository link is also available in Settings. SimpleFIN and Cloudflare are independent services and are not bundled or relicensed by this project.
+
+## Hosted freelancer edition
+
+The $29/year hosted bundle includes Finance and Invoicer. Open the dashboard at `/dashboard` or see a fictional business at `/dashboard-preview`. Bank syncing is billed separately by SimpleFIN.
+
+[Hosted setup and release rehearsal](docs/hosted-launch.md) · [Launch playbook](docs/business-launch.md) · [Brand guide](docs/brand-spec.md)

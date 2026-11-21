@@ -4,6 +4,8 @@ import type { Profile } from "../shared/profile";
 import type { TransactionAppearance } from "../shared/transaction-appearance";
 import type { AppearanceSaveState } from "./appearance-autosave";
 export type Workspace = {
+  hosted?: boolean;
+  keyAuth?: boolean;
   accounts: Account[];
   categories: Category[];
   refresh: () => void;

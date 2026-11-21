@@ -10,3 +10,4 @@ coverage/
 *.local
 .private/
 *.sql.local
+dist-hosted/

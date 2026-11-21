@@ -11,7 +11,7 @@ import { useWorkspace } from "./context";
 import type { Transaction, TransactionFieldEdit } from "../shared/models";
 import "./transaction-field.css";
 
-type FieldName = TransactionFieldEdit["field"];
+type FieldName = "category_id" | "merchant" | "description";
 const labels = {
   description: "Description",
   merchant: "Merchant",

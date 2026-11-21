@@ -1,3 +1,5 @@
+import { ViewSwitch, useGridView } from "../LedgerGrid";
+import { CatalogGrid } from "../CatalogGrid";
 import { useRef, useState } from "react";
 import { Plus, Pencil, Trash2, Workflow } from "lucide-react";
 import { useWorkspace } from "../context";
@@ -48,6 +50,7 @@ function useRuleDeletion(onDeleted?: () => void) {
   return { busy, error, remove };
 }
 export default function Categories() {
+  const view=useGridView("categories");
   const { categories, accounts, version, refresh, notify } = useWorkspace();
   const [tab, setTab] = useState("categories"),
     [edit, setEdit] = useState<Category | null | undefined>(),
@@ -85,8 +88,9 @@ export default function Categories() {
           <span className="badge-count">{rules.data?.length ?? 0}</span>
         </button>
       </div>
+      <ViewSwitch {...view} normal="List"/>
       <ErrorNotice error={deletion.error ?? error ?? rules.error} />
-      {tab === "categories" ? (
+      {view.grid ? <CatalogGrid table={tab === "categories" ? "categories" : "rules"} rules={rules.data ?? []}/> : tab === "categories" ? (
         <div className="panel table-scroll">
           <table>
             <thead>

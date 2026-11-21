@@ -137,6 +137,33 @@ export class Ledger {
       ],
     };
   }
+  async editCatalogCell(table: "accounts" | "categories" | "rules", key: string, field: string, previous: string | number, input: unknown, requestKey?: string) {
+    // Only these explicitly editable columns can appear in SQL identifiers.
+    const allowed = {
+      accounts: { name: accountSchema.shape.name, institution: accountSchema.shape.institution, kind: accountSchema.shape.kind, balance: accountSchema.shape.balance },
+      categories: { name: categorySchema.shape.name, type: categorySchema.shape.type, tax_treatment: categorySchema.shape.tax_treatment, color: categorySchema.shape.color },
+      rules: { name: ruleSchema.shape.name, pattern: ruleSchema.shape.pattern, priority: ruleSchema.shape.priority, enabled: ruleSchema.shape.enabled, category_id: ruleSchema.shape.category_id },
+    } as const;
+    const columns = allowed[table];
+    assert(Object.hasOwn(columns, field), 400, "This column is read-only.");
+    const schema = Object.getOwnPropertyDescriptor(columns, field)!.value;
+    const parsed = schema.parse(input) as string | number | boolean;
+    const value = typeof parsed === "boolean" ? Number(parsed) : parsed;
+    const request = await this.prepareRequest<{ saved: boolean }>("catalog.cell", { table, key, field, previous, value }, requestKey);
+    if (request.prior) return request.prior;
+    const manual = table === "accounts" && field === "balance";
+    const conditions = (table === "accounts" ? " AND archived=0" : "") + (manual ? " AND source='manual'" : "");
+    const guard = id();
+    const result = { saved: true };
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO write_guards VALUES(?, EXISTS(SELECT 1 FROM ${table} WHERE id=? AND ${field} IS ?${conditions}))`).bind(guard, key, previous),
+      this.db.prepare(`UPDATE ${table} SET ${field}=?${manual ? ",balance_at=CURRENT_TIMESTAMP" : ""} WHERE id=?`).bind(value, key),
+      this.auditStatement(table + ".cell", key, { [field]: previous }, { [field]: value }),
+      ...request.statements(result),
+      this.db.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+    ]);
+    return result;
+  }
   async saveAccount(input: unknown, accountId?: string, requestKey?: string) {
     const data = accountSchema.parse(input);
     const request = await this.prepareRequest<{ id: string } & typeof data>(
@@ -490,11 +517,11 @@ export class Ledger {
   }
   async editTransactionField(key: string, edit: TransactionFieldEdit, revision: number, requestKey?: string) {
     const tx = await this.db.prepare(
-      `SELECT t.description,t.merchant,t.category_id,t.type,t.revision,t.transfer_id,
+      `SELECT t.description,t.merchant,t.category_id,t.type,t.revision,t.transfer_id,t.tags,t.notes,t.reviewed,
         EXISTS(SELECT 1 FROM splits WHERE transaction_id=t.id) AS has_splits
        FROM transactions t JOIN accounts a ON a.id=t.account_id
        WHERE t.id=? AND t.deleted=0 AND a.archived=0`,
-    ).bind(key).first<Pick<Transaction, "description" | "merchant" | "category_id" | "type" | "revision" | "transfer_id"> & { has_splits: number }>();
+    ).bind(key).first<Pick<Transaction, "description" | "merchant" | "category_id" | "type" | "revision" | "transfer_id" | "tags" | "notes" | "reviewed"> & { has_splits: number }>();
     const readRequest = () => this.prepareRequest<{ revision: number }>(
       "transaction.edit-field", { key, edit, revision }, requestKey,
     );
@@ -512,10 +539,10 @@ export class Ledger {
         "UPDATE transactions SET category_id=?,type=?,user_edited=1,rule_id=NULL,revision=revision+1 WHERE id=?",
       ).bind(edit.value, category?.type ?? tx.type, key);
     } else {
-      // The discriminated schema limits this column to description or merchant.
+      const value = edit.field === "tags" ? JSON.stringify(edit.value) : edit.field === "reviewed" ? Number(edit.value) : edit.value;
       update = this.db.prepare(
         `UPDATE transactions SET ${edit.field}=?,user_edited=1,revision=revision+1 WHERE id=?`,
-      ).bind(edit.value, key);
+      ).bind(value, key);
     }
     const guard = id();
     const result = { revision: revision + 1 };
@@ -559,12 +586,13 @@ export class Ledger {
     ]);
     return { deleted: true };
   }
-  async linkTransfer(a: string, b: string) {
+  async linkTransfer(a: string, b: string, expected?: [number, number]) {
     assert(a !== b, 400, "Select two different transactions");
     const [left, right] = await Promise.all([
       this.transaction(a),
       this.transaction(b),
     ]);
+    assert(!expected || (left.revision === expected[0] && right.revision === expected[1]), 409, "A transaction changed. Review the current amounts.");
     assert(
       left.account_id !== right.account_id &&
         left.currency === right.currency &&
@@ -606,16 +634,19 @@ export class Ledger {
     ]);
     return { transfer_id: transfer };
   }
-  async unlinkTransfer(key: string) {
+  async unlinkTransfer(key: string, revision?: number) {
     const tx = await this.transaction(key);
     assert(tx.transfer_id, 400, "Transaction is not linked");
+    const guard = id();
     await this.db.batch([
+      this.db.prepare("INSERT INTO write_guards VALUES(?,EXISTS(SELECT 1 FROM transactions WHERE id=? AND transfer_id=? AND revision=?))").bind(guard,key,tx.transfer_id,revision ?? tx.revision),
       this.db
         .prepare(
           "UPDATE transactions SET transfer_id=NULL,revision=revision+1 WHERE transfer_id=?",
         )
         .bind(tx.transfer_id),
       this.auditStatement("transfer.unlink", key, tx, null),
+      this.db.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
     ]);
     return { unlinked: true };
   }

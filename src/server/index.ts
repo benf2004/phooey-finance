@@ -29,6 +29,8 @@ import {
   readText,
   errorMessage,
 } from "./util";
+import { foundationData } from "./foundation";
+import { budgetKey } from "../shared/foundation";
 import { Ledger } from "./ledger";
 import { dateSchema, defaultMcpTokenDays, scopeSchema, filterSchema, transactionFieldSchema } from "../shared/models";
 import { taxState, taxLedger, saveTax, addPayment } from "./taxes";
@@ -91,10 +93,11 @@ app.onError((e, c) => {
   );
 });
 app.get("/api/health", (c) => c.json({ ok: true, version: "0.1.0" }));
+app.get("/api/login-method", (c) => c.json({ mode: c.env.ADMIN_KEY ? "key" : "password" }));
 app.post("/api/login", async (c) => {
   checkOrigin(c.req.raw);
   const body = z
-    .object({ username: z.string().max(200), password: z.string().max(500) })
+    .object({ username: z.string().max(200).default(""), password: z.string().max(500) })
     .parse(await readJSON(c.req.raw, 2000));
   const token = await login(
     c.env,
@@ -106,7 +109,10 @@ app.post("/api/login", async (c) => {
   return c.json({ ok: true });
 });
 app.use("/api/*", async (c, next) => {
-  const p = await authenticate(
+  const p: Principal | null = c.env.hostedCustomer ? {
+    actor: c.env.hostedCustomer, kind: "session",
+    scopes: ["finance:read","transactions:write","rules:write","tax:write","sync:write"],
+  } : await authenticate(
     c.env,
     c.req.raw,
     !c.req.path.startsWith("/api/files/"),
@@ -120,7 +126,10 @@ app.use("/api/*", async (c, next) => {
 });
 app.get("/api/session", async (c) =>
   c.json({
-    username: c.env.ADMIN_USERNAME,
+    username: c.env.ADMIN_USERNAME || "Admin",
+    keyAuth: !!c.env.ADMIN_KEY,
+    invoicerUrl: c.env.invoicerUrl,
+    hosted: !!c.env.hostedCustomer,
     ...(await readAccountPreferences(c.env.DB)),
     sourceUrl: c.env.SOURCE_URL,
     demo: !!(await c.env.DB.prepare(
@@ -157,6 +166,14 @@ app.post("/api/settings/reset", async (c) =>
     ),
   ),
 );
+for (const table of ["accounts", "categories", "rules"] as const) {
+  app.patch(`/api/${table}/:id`, async (c) => {
+    const { field, previous, value } = z.object({
+      field: z.string(), previous: z.union([z.string(), z.number()]), value: z.union([z.string(), z.number(), z.boolean()]),
+    }).parse(await readJSON(c.req.raw));
+    return c.json(await c.get("ledger").editCatalogCell(table, c.req.param("id"), field, previous, value, c.req.header("Idempotency-Key")));
+  });
+}
 app.get("/api/accounts", async (c) => c.json(await c.get("ledger").accounts()));
 app.post("/api/accounts", async (c) =>
   c.json(
@@ -341,6 +358,14 @@ app.get("/api/report", async (c) => {
 });
 const year = (s: string) =>
   z.coerce.number().int().min(2000).max(2100).parse(s);
+app.get("/api/foundation/:year",async c=>c.json(await foundationData(c.get("ledger"),year(c.req.param("year")))));
+app.put("/api/foundation/:year/budget",async c=>{
+ const y=year(c.req.param("year"));
+ const d=z.object({currency:z.string().regex(/^[A-Z]{3}$/),month:z.number().int().min(1).max(12),category:z.string().min(1).max(80),amount:z.number().int().nonnegative().max(1e12)}).parse(await readJSON(c.req.raw,2000));
+ assert(await c.env.DB.prepare("SELECT id FROM categories WHERE id=? AND type!='transfer'").bind(d.category).first(),400,"Choose an income or expense category.");
+ await c.env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,revision=settings.revision+1").bind("budget/"+y+"/"+budgetKey(d.currency,d.month,d.category),String(d.amount)).run();
+ return c.json({ok:true});
+});
 app.get("/api/taxes/:year/ledger", async (c) => {
   const q = z
     .object({ asOf: dateSchema, tag: z.string().default("Business") })

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy and data controls · phooey! finance</title>
+    <meta
+      name="description"
+      content="How the hosted edition handles bank feeds, Google access, billing and deletion."
+    />
+    <meta property="og:title" content="Privacy and data controls" />
+    <meta
+      property="og:description"
+      content="How the hosted edition handles bank feeds, Google access, billing and deletion."
+    />
+    <link rel="icon" href="/business/assets/icon.svg" />
+    <link rel="stylesheet" href="/business/brand.css" />
+  </head>
+  <body>
+    <header>
+      <a href="/business/"><img src="/business/assets/wordmark.svg" alt="phooey! finance"></a>
+      <nav aria-label="Main navigation"><a href="/dashboard-preview">Dashboard preview</a><a href="/business/pricing/">Pricing</a><a href="/dashboard">Open dashboard</a></nav>
+    </header>
+    <main>
+      <section class="intro">
+        <h1>Privacy and data controls</h1>
+        <p>
+          Phooey stores your ledger to provide the dashboard, bank import,
+          invoicing, exports, and recovery.
+        </p>
+      </section>
+      <section class="band">
+        <h2>Where information goes</h2>
+        <p>
+          Each hosted workspace has a dedicated ledger database, file bucket,
+          and job queue. Hosted Invoicer uses a separate database for invoices, customer details, and logos. Cloudflare hosts the service. Your identity provider
+          verifies your account. Stripe handles card payments. SimpleFIN
+          provides the bank accounts you select. 
+        </p>
+        <p>
+          Anyone with an active invoice share link can view that invoice and download its PDF. Revoke the link from the invoice actions to end access.
+        </p>
+      </section>
+      <section class="band">
+        <h2>Activity, retention and deletion</h2>
+        <p>
+          Phooey records signup, workspace visits, and imported-data availability as dated events for operating the service. These
+          events exclude transaction descriptions, balances, and institution
+          names. Financial records remain in the workspace until removed.
+          Request account deletion or removal from the beta list through
+          support. Billing records and provider backups follow their applicable
+          retention requirements.
+        </p>
+        <a href="/cloud/contact">Contact support</a>
+      </section>
+    </main>
+    <footer>
+      <a href="/business/privacy/">Privacy</a><a href="/business/terms/">Terms</a><a href="/cloud/contact">Support</a><a href="https://github.com/benf2004/phooey-finance">GitHub</a>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+/freelance-demo /dashboard-preview 301
+/foundation-preview /dashboard-preview 301
+/tiller-preview /dashboard-preview 301
+/business/template /dashboard-preview 301
+/business/template/* /dashboard-preview 301
+/business/tiller-connect /dashboard-preview 301
+/business/tiller-connect/* /dashboard-preview 301

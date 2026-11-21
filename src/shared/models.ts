@@ -67,6 +67,9 @@ const descriptionSchema = z.string().trim().min(1).max(500);
 const merchantSchema = z.string().max(200);
 export const transactionFieldSchema = z.discriminatedUnion("field", [
   z.object({ field: z.literal("description"), value: descriptionSchema }),
+  z.object({ field: z.literal("tags"), value: tagsSchema }),
+  z.object({ field: z.literal("reviewed"), value: z.boolean() }),
+  z.object({ field: z.literal("notes"), value: z.string().max(4000) }),
   z.object({ field: z.literal("merchant"), value: merchantSchema }),
   z.object({ field: z.literal("category_id"), value: z.string().min(1).nullable() }),
 ]);

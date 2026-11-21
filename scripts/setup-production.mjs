@@ -1,18 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { writeFile, mkdir, access } from "node:fs/promises";
-import { hash } from "bcryptjs";
 await mkdir(".private", { recursive: true, mode: 0o700 });
 try {
   await access(".private/production-secrets.json");
   console.log("Production secrets already exist; leaving them unchanged.");
 } catch {
-  const password = randomBytes(24).toString("base64url");
+  const key = randomBytes(32).toString("hex");
   await writeFile(
     ".private/production-secrets.json",
     JSON.stringify(
       {
-        ADMIN_USERNAME: "admin",
-        ADMIN_PASSWORD_HASH: await hash(password, 12),
+        ADMIN_KEY: key,
         ENCRYPTION_KEY: randomBytes(32).toString("base64"),
       },
       null,
@@ -22,7 +20,7 @@ try {
   );
   await writeFile(
     ".private/production-access.txt",
-    `Username: admin\nPassword: ${password}\n\nProduction credentials. Keep private; this file is not part of the source archive.\n`,
+    `Admin key: ${key}\n\nProduction credentials. Keep private; this file is not part of the source archive.\n`,
     { mode: 0o600, flag: "wx" },
   );
   console.log(

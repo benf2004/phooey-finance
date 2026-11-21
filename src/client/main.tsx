@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useMemo, useState, useSyncExternalSto
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
+  BookOpen,
   ArrowLeftRight,
   Landmark,
   Tags,
@@ -17,6 +18,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import "./styles.css";
+import "./workspace.css";
 import { api, post } from "./api";
 import { Button, Field, Loading, ErrorNotice } from "./ui";
 import { WorkspaceContext } from "./context";
@@ -24,20 +26,32 @@ import { createAppearanceAutosave } from "./appearance-autosave";
 import { AppearanceSaveStatus } from "./AppearanceSaveStatus";
 import type { Account, Category } from "../shared/models";
 import { defaultTransactionAppearance, type TransactionAppearance } from "../shared/transaction-appearance";
+const Foundation = lazy(()=>import("./pages/Foundation"));
 const Overview = lazy(() => import("./pages/Overview"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const Accounts = lazy(() => import("./pages/Accounts"));
 const Categories = lazy(() => import("./pages/Categories"));
 const Taxes = lazy(() => import("./pages/Taxes"));
+const DashboardPreview = lazy(() => import("./pages/DashboardPreview"));
 const Settings = lazy(() => import("./pages/Settings"));
 const nav = [
   { path: "/", name: "Overview", icon: LayoutDashboard },
+  { path: "/reports", name: "Reports", icon: BookOpen },
   { path: "/transactions", name: "Transactions", icon: ArrowLeftRight },
   { path: "/accounts", name: "Accounts", icon: Landmark },
   { path: "/categories", name: "Categories & rules", icon: Tags },
+  { path: "/tags", name: "Tags", icon: Tags },
   { path: "/taxes", name: "Tax planner", icon: Calculator },
 ];
+function Wordmark() {
+  return <picture className="brand-lockup"><source media="(prefers-color-scheme: dark)" srcSet="/business/assets/wordmark-dark.svg"/><img src="/business/assets/wordmark.svg" alt="phooey! finance"/></picture>;
+}
 function Login({ onLogin }: { onLogin: () => void }) {
+  const [mode, setMode] = useState<"key" | "password" | null>(null);
+  useEffect(() => {
+    api<{ mode: "key" | "password" }>("/login-method")
+      .then(r => setMode(r.mode)).catch(() => setMode("password"));
+  }, []);
   const [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   return (
@@ -45,7 +59,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
       <div className="login-form">
         <div className="login-box">
           <a className="wordmark" href="/">
-            phooey<span>finance</span>
+            <Wordmark/>
           </a>
           <h2>Sign in</h2>
           <form
@@ -56,7 +70,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
               const form = new FormData(e.currentTarget);
               try {
                 await post("/login", {
-                  username: form.get("username"),
+                  username: form.get("username") ?? "",
                   password: form.get("password"),
                 });
                 onLogin();
@@ -67,15 +81,15 @@ function Login({ onLogin }: { onLogin: () => void }) {
               }
             }}
           >
-            <Field label="Username">
+            {mode === "password" && <Field label="Username">
               <input
                 name="username"
                 autoComplete="username"
                 required
                 autoFocus
               />
-            </Field>
-            <Field label="Password">
+            </Field>}
+            <Field label={mode === "key" ? "Admin key" : "Password"}>
               <input
                 name="password"
                 type="password"
@@ -84,7 +98,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
               />
             </Field>
             <ErrorNotice error={error} />
-            <Button busy={busy} type="submit">
+            <Button busy={busy} disabled={!mode} type="submit">
               Sign in
             </Button>
           </form>
@@ -156,6 +170,9 @@ function OAuthConsent() {
 }
 function App() {
   const [session, setSession] = useState<{
+      hosted?: boolean;
+      keyAuth?: boolean;
+      invoicerUrl?: string;
       username: string;
       displayName: string;
       transactionAppearance: TransactionAppearance;
@@ -247,12 +264,14 @@ function App() {
   if (!ready) return <Loading />;
   if (!session) return <Login onLogin={() => void loadSession()} />;
   const accountName = session.displayName || session.username;
-  const active = path.split("?")[0];
+  const requestedPath = path.split("?")[0];
+  const active = ["/overview", "/dashboard"].includes(requestedPath) ? "/" : requestedPath === "/foundation" ? "/reports" : requestedPath;
+  const menu = nav;
   const appearanceTabActive = (active === "/settings" || active === "/connections") &&
     new URLSearchParams(location.search).get("tab") === "appearance";
-  const title = nav.find((n) => n.path === active)?.name ?? "Settings";
+  const title = menu.find((n) => n.path === active)?.name ?? "Settings";
   const Page =
-    active === "/transactions"
+    active === "/reports" ? Foundation : (active === "/transactions" || active === "/tags")
       ? Transactions
       : active === "/accounts"
         ? Accounts
@@ -263,9 +282,31 @@ function App() {
             : active === "/settings" || active === "/connections"
               ? Settings
               : Overview;
+  const workspaceTools = (<div className="topbar-actions">
+              {session.demo && <span className="badge amber">Demo data</span>}
+              <button
+                className="search-trigger"
+                onClick={() => navigate("/transactions?focus=search")}
+              >
+                <Search size={16} />
+                <span>Search transactions</span>
+                <kbd>⌘ K</kbd>
+              </button>
+              <button
+                className="icon-button"
+                aria-label={
+                  theme === "light" ? "Use dark theme" : "Use light theme"
+                }
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+              >
+                {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+              </button>
+            </div>);
   return (
     <WorkspaceContext
       value={{
+        hosted: session.hosted,
+        keyAuth: session.keyAuth,
         accounts,
         categories,
         version,
@@ -286,22 +327,20 @@ function App() {
         setTheme,
       }}
     >
-      <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      {<div className={`app ${Page === Overview ? "overview-shell" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         <aside id="app-sidebar" className={`sidebar ${mobile ? "open" : ""}`}>
           <div className="sidebar-header">
             <a
               className="wordmark"
               href="/"
-              aria-label="Phooey Finance home"
-              title="Phooey Finance home"
+              aria-label="phooey! finance home"
+              title="phooey! finance home"
               onClick={(e) => {
                 e.preventDefault();
                 navigate("/");
               }}
             >
-              <b className="wordmark-name">phooey</b>
-              <span className="wordmark-name">finance</span>
-              <b className="wordmark-monogram" aria-hidden="true">p</b>
+              <Wordmark/>
             </a>
             <button
               type="button"
@@ -316,7 +355,7 @@ function App() {
             </button>
           </div>
           <nav aria-label="Main navigation">
-            {nav.map((n) => (
+            {menu.map((n) => (
               <a
                 key={n.path}
                 className={active === n.path ? "active" : ""}
@@ -333,8 +372,10 @@ function App() {
                 <span className="nav-label">{n.name}</span>
               </a>
             ))}
+            {session.invoicerUrl && <a href={session.invoicerUrl} title="Invoicer"><BookOpen size={18}/><span className="nav-label">Invoicer</span></a>}
           </nav>
           <div className="sidebar-bottom">
+            {Page === Overview && <div className="sidebar-tools">{workspaceTools}</div>}
             <div className="profile">
               <a
                 className="account-settings"
@@ -367,6 +408,7 @@ function App() {
                 title="Sign out"
                 onClick={async () => {
                   await post("/logout", {});
+                  if (session.hosted) location.assign("/");
                   setSession(null);
                 }}
               >
@@ -389,26 +431,7 @@ function App() {
             <div className="breadcrumb">
               <strong>{title}</strong>
             </div>
-            <div className="topbar-actions">
-              {session.demo && <span className="badge amber">Demo data</span>}
-              <button
-                className="search-trigger"
-                onClick={() => navigate("/transactions?focus=search")}
-              >
-                <Search size={16} />
-                <span>Search transactions</span>
-                <kbd>⌘ K</kbd>
-              </button>
-              <button
-                className="icon-button"
-                aria-label={
-                  theme === "light" ? "Use dark theme" : "Use light theme"
-                }
-                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              >
-                {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
-              </button>
-            </div>
+            {workspaceTools}
           </header>
           <main className="content">
             {!appearanceTabActive && appearanceSaveState.status === "error" && <AppearanceSaveStatus />}
@@ -427,6 +450,7 @@ function App() {
           </main>
         </div>
       </div>
+      }
       {toast && (
         <div className="toast" role="status">
           <CheckCircle2 size={18} />
@@ -444,6 +468,6 @@ function App() {
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {location.pathname.replace(/\/$/, "") === "/dashboard-preview" ? <Suspense fallback={<Loading/>}><DashboardPreview/></Suspense> : <App />}
   </React.StrictMode>,
 );

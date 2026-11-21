@@ -1,0 +1,62 @@
+diff -ur a/server/src/services/jwt.ts b/server/src/services/jwt.ts
+--- a/server/src/services/jwt.ts	2026-11-21 13:50:59
++++ b/server/src/services/jwt.ts	2026-11-21 13:50:59
+@@ -463,6 +463,7 @@
+ }
+ 
+ export interface AppleUser {
++  emailVerified?: boolean;
+   email: string;
+   id: string;
+ }
+@@ -532,6 +533,7 @@
+         return {
+           id: String(result.sub),
+           email: 'email' in result ? String(result.email) : '',
++          emailVerified: result.email_verified === true || result.email_verified === 'true',
+         } as AppleUser
+       }
+     }
+diff -ur a/server/src/services/user.ts b/server/src/services/user.ts
+--- a/server/src/services/user.ts	2026-11-21 13:51:00
++++ b/server/src/services/user.ts	2026-11-21 13:51:00
+@@ -117,7 +117,8 @@
+     }
+   }
+ 
+-  return result
++  const profile = { ...result, socialAccountType: user.socialAccountType, socialAccountId: user.socialAccountId }
++  return profile
+ }
+ 
+ const checkUniqueAttribute = async (
+@@ -664,11 +664,11 @@
+       lastName: googleUser.lastName,
+     },
+   )
+-  if (user.emailVerified !== googleUser.emailVerified) {
++  if (user.email !== googleUser.email || user.emailVerified !== googleUser.emailVerified) {
+     await userModel.update(
+       c.env.DB,
+       user.id,
+-      { emailVerified: googleUser.emailVerified ? 1 : 0 },
++      { email: googleUser.email, emailVerified: googleUser.emailVerified ? 1 : 0 },
+     )
+   }
+   return user
+@@ -834,11 +834,14 @@
+       socialAccountType: userModel.SocialAccountType.Apple,
+       password: null,
+       locale,
+-      emailVerified: 0,
++      emailVerified: appleUser.emailVerified ? 1 : 0,
+       firstName: null,
+       lastName: null,
+     },
+   )
++  if (currentUser && appleUser.email && (user.email !== appleUser.email || user.emailVerified !== !!appleUser.emailVerified)) {
++    await userModel.update(c.env.DB, user.id, { email: appleUser.email, emailVerified: appleUser.emailVerified ? 1 : 0 })
++  }
+   return user
+ }
+ 

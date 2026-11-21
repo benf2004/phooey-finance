@@ -45,7 +45,7 @@
     "crons": ["17 6,18 * * *"],
   },
   "vars": {
-    "APP_NAME": "Phooey Finance",
+    "APP_NAME": "phooey! finance",
     "SOURCE_URL": "https://github.com/benf2004/phooey-finance",
   },
   "observability": {
@@ -62,9 +62,9 @@
   "env": {
     "production": {
       "name": "phooey-finance",
-      "routes": [
-        { "pattern": "finance.phooey.foo", "custom_domain": true },
-      ],
+      // The commercial portal owns finance.phooey.foo after cutover.
+      "workers_dev": true,
+      "routes": [],
       "d1_databases": [
         {
           "binding": "DB",
@@ -95,7 +95,7 @@
         ],
       },
       "vars": {
-        "APP_NAME": "Phooey Finance",
+        "APP_NAME": "phooey! finance",
         "SOURCE_URL": "https://github.com/benf2004/phooey-finance",
       },
     },

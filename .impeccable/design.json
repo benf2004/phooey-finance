@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T18:51:54.196Z",
+  "title": "Design System: phooey! finance",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Invoice green",
+        "tonalRamp": [
+          "oklch(15% 0.0601 171.9)",
+          "oklch(26% 0.0601 171.9)",
+          "oklch(38% 0.0601 171.9)",
+          "oklch(49% 0.0601 171.9)",
+          "oklch(61% 0.0601 171.9)",
+          "oklch(72% 0.0601 171.9)",
+          "oklch(84% 0.0601 171.9)",
+          "oklch(95% 0.0601 171.9)"
+        ]
+      },
+      "primary-hover": {
+        "role": "primary",
+        "displayName": "Deep invoice green",
+        "tonalRamp": [
+          "oklch(15% 0.0559 170.8)",
+          "oklch(26% 0.0559 170.8)",
+          "oklch(38% 0.0559 170.8)",
+          "oklch(49% 0.0559 170.8)",
+          "oklch(61% 0.0559 170.8)",
+          "oklch(72% 0.0559 170.8)",
+          "oklch(84% 0.0559 170.8)",
+          "oklch(95% 0.0559 170.8)"
+        ]
+      },
+      "income": {
+        "role": "secondary",
+        "displayName": "Income green",
+        "tonalRamp": [
+          "oklch(15% 0.1080 152.7)",
+          "oklch(26% 0.1080 152.7)",
+          "oklch(38% 0.1080 152.7)",
+          "oklch(49% 0.1080 152.7)",
+          "oklch(61% 0.1080 152.7)",
+          "oklch(72% 0.1080 152.7)",
+          "oklch(84% 0.1080 152.7)",
+          "oklch(95% 0.1080 152.7)"
+        ]
+      },
+      "expenses": {
+        "role": "secondary",
+        "displayName": "Expense rust",
+        "tonalRamp": [
+          "oklch(15% 0.1389 39.6)",
+          "oklch(26% 0.1389 39.6)",
+          "oklch(38% 0.1389 39.6)",
+          "oklch(49% 0.1389 39.6)",
+          "oklch(61% 0.1389 39.6)",
+          "oklch(72% 0.1389 39.6)",
+          "oklch(84% 0.1389 39.6)",
+          "oklch(95% 0.1389 39.6)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Green ink",
+        "tonalRamp": [
+          "oklch(15% 0.0443 179.2)",
+          "oklch(26% 0.0443 179.2)",
+          "oklch(38% 0.0443 179.2)",
+          "oklch(49% 0.0443 179.2)",
+          "oklch(61% 0.0443 179.2)",
+          "oklch(72% 0.0443 179.2)",
+          "oklch(84% 0.0443 179.2)",
+          "oklch(95% 0.0443 179.2)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted text",
+        "tonalRamp": [
+          "oklch(15% 0.0235 168.5)",
+          "oklch(26% 0.0235 168.5)",
+          "oklch(38% 0.0235 168.5)",
+          "oklch(49% 0.0235 168.5)",
+          "oklch(61% 0.0235 168.5)",
+          "oklch(72% 0.0235 168.5)",
+          "oklch(84% 0.0235 168.5)",
+          "oklch(95% 0.0235 168.5)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Warm canvas",
+        "tonalRamp": [
+          "oklch(15% 0.0053 106.5)",
+          "oklch(26% 0.0053 106.5)",
+          "oklch(38% 0.0053 106.5)",
+          "oklch(49% 0.0053 106.5)",
+          "oklch(61% 0.0053 106.5)",
+          "oklch(72% 0.0053 106.5)",
+          "oklch(84% 0.0053 106.5)",
+          "oklch(95% 0.0053 106.5)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Report surface",
+        "tonalRamp": [
+          "oklch(15% 0.0039 106.5)",
+          "oklch(26% 0.0039 106.5)",
+          "oklch(38% 0.0039 106.5)",
+          "oklch(49% 0.0039 106.5)",
+          "oklch(61% 0.0039 106.5)",
+          "oklch(72% 0.0039 106.5)",
+          "oklch(84% 0.0039 106.5)",
+          "oklch(95% 0.0039 106.5)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Ledger rule",
+        "tonalRamp": [
+          "oklch(15% 0.0121 133.4)",
+          "oklch(26% 0.0121 133.4)",
+          "oklch(38% 0.0121 133.4)",
+          "oklch(49% 0.0121 133.4)",
+          "oklch(61% 0.0121 133.4)",
+          "oklch(72% 0.0121 133.4)",
+          "oklch(84% 0.0121 133.4)",
+          "oklch(95% 0.0121 133.4)"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "White sheet",
+        "tonalRamp": [
+          "oklch(15% 0.0000 0)",
+          "oklch(26% 0.0000 0)",
+          "oklch(38% 0.0000 0)",
+          "oklch(49% 0.0000 0)",
+          "oklch(61% 0.0000 0)",
+          "oklch(72% 0.0000 0)",
+          "oklch(84% 0.0000 0)",
+          "oklch(95% 0.0000 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Overview heading",
+        "purpose": "Names the current workspace view."
+      },
+      "metric": {
+        "displayName": "Headline amount",
+        "purpose": "Compares income, expenses and net."
+      },
+      "document-title": {
+        "displayName": "Invoice title",
+        "purpose": "Identifies the editable document."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Field labels and actions."
+      }
+    },
+    "breakpoints": [
+      {
+        "name": "Invoice menu",
+        "value": "900px"
+      },
+      {
+        "name": "Desktop finance tools",
+        "value": "851px"
+      },
+      {
+        "name": "Stacked overview",
+        "value": "740px"
+      },
+      {
+        "name": "Stacked invoice",
+        "value": "720px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Save draft",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action in the editor.",
+      "html": "<button class=\"ds-button\">Save draft</button>",
+      "css": ".ds-button{font:600 13px Inter,sans-serif;min-height:39px;padding:10px 16px;border-radius:8px;cursor:pointer}.ds-button:focus-visible{outline:2px solid #a64724;outline-offset:3px}.ds-button{color:white;background:var(--accent,#174b3d);border:1px solid #174b3d}.ds-button:hover{background:#0a3b2e}"
+    },
+    {
+      "name": "Preview PDF",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary document action.",
+      "html": "<button class=\"ds-button\">Preview PDF</button>",
+      "css": ".ds-button{font:600 13px Inter,sans-serif;min-height:39px;padding:10px 16px;border-radius:8px;cursor:pointer}.ds-button:focus-visible{outline:2px solid #a64724;outline-offset:3px}.ds-button{background:white;border:1px solid #dfe4ec;color:#4b5569}.ds-button:hover{background:#f8f9fc;border-color:#527966}"
+    },
+    {
+      "name": "Document field",
+      "kind": "input",
+      "refersTo": "document-field",
+      "description": "An editable value on the invoice sheet.",
+      "html": "<label class=\"ds-field\">Payment terms<input value=\"Net 30\"></label>",
+      "css": ".ds-field{display:grid;gap:6px;font:600 12px Inter,sans-serif;color:#354b3e}.ds-field input{font:400 13px/1.4 Inter,sans-serif;padding:6px 8px;border-radius:4px;border:1px solid #dce3dc;background:white;color:#24372e}.ds-field input:hover{border-color:#9aaa9e}.ds-field input:focus{border-color:#266a48;outline:2px solid #c3decb;outline-offset:1px}"
+    },
+    {
+      "name": "Suite navigation",
+      "kind": "nav",
+      "refersTo": "navigation-link",
+      "description": "Current section within Invoicer.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Workspace\"><a href=\"#invoices\" aria-current=\"page\">Invoices</a><a href=\"#customers\">Customers</a></nav>",
+      "css": ".ds-nav{display:flex;background:#103c33;gap:24px;padding:0 16px}.ds-nav a{padding:18px 0 15px;border-bottom:3px solid transparent;color:#e1e9df;font:510 13px Inter,sans-serif;text-decoration:none}.ds-nav a:hover,.ds-nav [aria-current]{color:white;border-color:#e8a07d}.ds-nav a:focus-visible{outline:2px solid #a64724;outline-offset:3px}"
+    },
+    {
+      "name": "Draft status",
+      "kind": "chip",
+      "refersTo": "draft-badge",
+      "description": "Lifecycle state of an invoice.",
+      "html": "<span class=\"ds-badge\">Draft</span>",
+      "css": ".ds-badge{display:inline-flex;padding:4px 8px;border:1px solid #e7ebf1;border-radius:5px;background:#f4e7df;color:#853a20;font:600 10px Inter,sans-serif}"
+    },
+    {
+      "name": "Report panel",
+      "kind": "card",
+      "refersTo": "report-panel",
+      "description": "Groups a report and its controls.",
+      "html": "<section class=\"ds-panel\"><h2>Expenses by category</h2></section>",
+      "css": ".ds-panel{background:var(--surface,#fffffc);color:var(--ink,#16372f);border:1px solid var(--line,#d7dcd4);border-radius:12px;padding:clamp(15px,1.6vw,26px)}.ds-panel h2{margin:0;font:660 clamp(16px,1.3vw,21px) Inter,sans-serif;letter-spacing:-.035em}"
+    },
+    {
+      "name": "Chart view",
+      "kind": "custom",
+      "refersTo": "chart-switch",
+      "description": "Shows the available views of the same cash-flow data.",
+      "html": "<div class=\"ds-switch\" role=\"group\" aria-label=\"Chart view\"><button aria-pressed=\"true\">Line</button><button aria-pressed=\"false\">Bars</button><button aria-pressed=\"false\">Table</button></div>",
+      "css": ".ds-switch{display:inline-flex;border:1px solid var(--line,#d7dcd4);border-radius:7px;overflow:hidden}.ds-switch button{background:transparent;border:0;color:var(--ink,#16372f);font:13px Inter,sans-serif;min-height:35px;padding:6px 13px;cursor:pointer}.ds-switch button+button{border-left:1px solid var(--line,#d7dcd4)}.ds-switch [aria-pressed=\"true\"]{background:#184c3f;color:white}.ds-switch button:focus-visible{outline:2px solid var(--flow-income,#217040);outline-offset:-3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Business statement",
+    "overview": "The dashboard helps an owner read a period’s results and open the records behind an amount. Invoicer brings the same dark green ink, compact controls and aligned figures to a white document that the owner edits in place.",
+    "keyCharacteristics": [
+      "The existing lowercase wordmark identifies the suite.",
+      "Figures align in columns and carry an explicit currency context.",
+      "The strongest boundary separates the working surface from navigation."
+    ],
+    "rules": [
+      {
+        "name": "The chart legend rule",
+        "body": "Give the income and expense series text labels and offer the same figures in a table.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do keep chart filters and groupings beside the report they control.",
+      "Do preserve the document’s reading order as its editable fields reflow."
+    ],
+    "donts": [
+      "Don't combine different currencies into a single total.",
+      "Don't rely on color alone to distinguish financial amounts or invoice states."
+    ]
+  }
+}

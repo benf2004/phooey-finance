@@ -12,6 +12,7 @@ import {
   dateSchema,
   type Scope,
 } from "../shared/models";
+import { tillerFeed } from "./tiller-feed";
 import { taxSchema } from "../shared/tax";
 import { taxState, saveTax, addPayment } from "./taxes";
 import { requestSync } from "./sync";
@@ -60,6 +61,13 @@ export function handleMcp(
         },
       );
     }
+    tool(
+      "get_tiller_feed",
+      "Read posted ledger allocations, categories and balance snapshots for a Tiller workbook from the selected starting date.",
+      z.object({ from: dateSchema }),
+      "finance:read",
+      (a) => tillerFeed(ledger, a.from),
+    );
     tool(
       "list_accounts",
       "List accounts with currency, balances and freshness timestamps.",
