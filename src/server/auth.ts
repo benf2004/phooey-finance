@@ -6,6 +6,8 @@ import { passwordChangeSchema } from "../shared/password";
 export type AppEnv = Env & {
   hostedCustomer?: string;
   invoicerUrl?: string;
+  mcpUrl?: string;
+  mcpRouting?: { db: D1Database; workspace: string; sharedClients: boolean };
   ADMIN_KEY?: string;
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD_HASH: string;
@@ -220,6 +222,7 @@ export async function issueToken(
 ) {
   const token = randomToken();
   const tokenId = id();
+  const expires = now() + days * 86400;
   await env.DB.prepare(
     "INSERT INTO access_tokens(id,name,token_hash,scopes,expires_at,client_id) VALUES(?,?,?,?,?,?)",
   )
@@ -228,10 +231,14 @@ export async function issueToken(
       name,
       await hash(token),
       JSON.stringify(scopes),
-      now() + days * 86400,
+      expires,
       clientId,
     )
     .run();
+  if (env.mcpRouting)
+    await env.mcpRouting.db.prepare(
+      "INSERT INTO mcp_routes(kind,digest,workspace,expires) VALUES('token',?,?,?)",
+    ).bind(await hash(token), env.mcpRouting.workspace, expires).run();
   return { id: tokenId, token, expires_in: days * 86400 };
 }
 export async function encrypt(env: AppEnv, value: string) {

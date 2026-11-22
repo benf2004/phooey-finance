@@ -5,6 +5,7 @@ import { ProfileSettings } from "./ProfileSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import ImportDialog from "./ImportDialog";
 import { ThemeSettings } from "./ThemeSettings";
+import { BankSyncQueue, type SyncJob } from "./BankSyncQueue";
 import { BankConnection, type BankConnectionState } from "./BankConnection";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -31,14 +32,7 @@ import {
 import { defaultMcpTokenDays, scopes, type Scope } from "../../shared/models";
 type Sync = {
   connection: BankConnectionState | null;
-  jobs: {
-    id: string;
-    kind: string;
-    status: string;
-    progress: string;
-    error: string | null;
-    created_at: string;
-  }[];
+  jobs: SyncJob[];
 };
 type Token = {
   id: string;
@@ -55,7 +49,8 @@ const settingsTabs = [
 ] as const;
 type SettingsTab = (typeof settingsTabs)[number]["id"];
 export default function Settings() {
-  const { hosted, keyAuth, version, refresh, notify, sourceUrl, navigate } = useWorkspace();
+  const { hosted, keyAuth, mcpUrl, version, refresh, notify, sourceUrl, navigate } = useWorkspace();
+  const serverUrl = mcpUrl || location.origin + "/mcp";
   const requestedTab = new URLSearchParams(location.search).get("tab");
   const activeTab = settingsTabs.find((tab) => tab.id === requestedTab)?.id ?? "connections";
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -84,7 +79,7 @@ export default function Settings() {
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [sync.data]);
+  }, [sync.data, tick, sync.error]);
   const run = async (fn: () => Promise<unknown>, message: string) => {
     setBusy(true);
     setError(null);
@@ -124,7 +119,10 @@ export default function Settings() {
         ))}
       </div>
       <SettingsTabPanel active={activeTab} id="connections">
-        <BankConnection connection={sync.data?.connection} />
+        <BankConnection connection={sync.data?.connection} syncing={sync.data?.jobs.some((job) => job.kind === "sync" && ["queued", "running"].includes(job.status))} />
+        <BankSyncQueue jobs={sync.data?.jobs.filter((job) => job.kind === "sync") ?? []}
+          loading={sync.loading && !sync.data} busy={busy}
+          onRetry={(jobId) => void run(() => post("/jobs/" + jobId + "/retry", {}), "Sync queued")} />
         <Panel
           title="AI & MCP access"
           action={<Server size={19} className="muted" />}
@@ -134,11 +132,11 @@ export default function Settings() {
               Use this server URL in an MCP-compatible client. OAuth opens your
               admin sign-in and shows the permissions requested.
             </p>
-            <div className="code-block">{location.origin}/mcp</div>
+            <div className="code-block">{serverUrl}</div>
             <Button
               variant="secondary"
               onClick={async () => {
-                await navigator.clipboard.writeText(location.origin + "/mcp");
+                await navigator.clipboard.writeText(serverUrl);
                 notify("MCP URL copied");
               }}
             >

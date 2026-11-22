@@ -1,6 +1,20 @@
 # MCP server
 
-Endpoint: `https://YOUR-WORKER.workers.dev/mcp`. Transport: Streamable HTTP. The dashboard Settings page shows the exact URL.
+Hosted endpoint: `https://finance.phooey.foo/mcp`. Transport: Streamable HTTP. Self-hosted installations use `https://YOUR-WORKER.workers.dev/mcp`. The dashboard Settings page shows the exact URL.
+
+The hosted endpoint routes OAuth and personal access tokens to the owner's workspace without a browser session. Existing workspace URLs remain available for connected clients. When deploying the shared endpoint, apply hosted migration `0007_mcp_routing.sql` and run `node scripts/backfill-mcp-routes.mjs .private/launch/resources.json .private/launch` to index existing token hashes before deploying the gateway.
+
+For the current beta workspace, deploy in this order. Updating the workspace before backfilling also indexes tokens created during the rollout. The regular `hosted:launch deploy` workflow performs the backfill automatically.
+
+```sh
+npm run build
+npx wrangler d1 migrations apply CONTROL --remote --config .private/launch/portal.json
+npx wrangler deploy --config .private/launch/beta01.json
+node scripts/backfill-mcp-routes.mjs .private/launch/resources.json .private/launch
+npx wrangler deploy --config .private/launch/portal.json
+```
+
+Verify that an unauthenticated request to `https://finance.phooey.foo/mcp` returns `401` with a `WWW-Authenticate` header pointing to the main-domain resource metadata. Both `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server` must return JSON without signing in. Then initialize an MCP client with an existing personal token or complete a new OAuth consent flow.
 
 Clients supporting OAuth discover the authorization server from the unauthenticated response, register a redirect, and open the admin login/consent screen. Authorization requires PKCE S256 and a resource of the exact MCP URL. OAuth access tokens expire after 365 days. Clients reauthorize at expiry because the server does not issue refresh tokens.
 

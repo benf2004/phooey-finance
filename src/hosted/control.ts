@@ -8,6 +8,9 @@ export type HostedEnv = AppEnv & {
   MELODY?: Fetcher;
   MELODY_CLIENT?: string;
   INVOICER?: Fetcher;
+  INVOICER_ASSETS?: Fetcher;
+  INVOICER_ORIGIN?: string;
+  INVOICER_MARKETING_ORIGIN?: string;
   INVOICER_KEY?: string;
   GOOGLE_LOGIN_CLIENT?: string;
   GOOGLE_LOGIN_SECRET?: string;
@@ -15,6 +18,8 @@ export type HostedEnv = AppEnv & {
   APPLE_LOGIN_SECRET?: string;
   PORTAL_ORIGIN: string;
   WORKSPACE_ID?: string;
+  CANONICAL_APP?: string;
+  [binding: `WORKSPACE_SERVICE_${string}`]: Fetcher | undefined;
   IDENTITY_ORIGIN: string;
   IDENTITY_CLIENT: string;
   IDENTITY_SECRET: string;
@@ -29,16 +34,34 @@ export type Customer = {
   id: string;
   email: string;
   security_version: number;
+  complimentary: number;
+  is_admin: number;
   stripe_customer: string | null;
   subscription: string | null;
   paid_until: number;
+  trial_ends_at: number;
   billing_revision: number;
   checkout_attempt: string | null;
   checkout_id: string | null;
 };
+export const hasAccess = (
+  account: Pick<Customer, "paid_until" | "complimentary" | "is_admin">,
+) =>
+  Boolean(account.is_admin || account.complimentary) ||
+  account.paid_until > now();
 export type Slot = { id: string; origin: string; owner: string | null };
 export const marketing = (env: HostedEnv) => new URL(env.PORTAL_ORIGIN).origin;
-export const portal = (env: HostedEnv) => new URL(env.APP_ORIGIN || env.PORTAL_ORIGIN).origin;
+export const portal = (env: HostedEnv) =>
+  new URL(env.APP_ORIGIN || env.PORTAL_ORIGIN).origin;
+export const signInDestination = (value?: string) =>
+  (value?.startsWith("/oauth/authorize?") && value.length <= 10000 && !/[\r\n\\]/.test(value)) ||
+  value === "/admin" ||
+  value === "/cloud/invoicer" ||
+  value === "/invoicer/" ||
+  value === "/cloud/security/setup" ||
+  value === "/cloud/security"
+    ? value
+    : "/cloud/account";
 export const cookie = (name: string, value: string, seconds: number) =>
   `__Host-phooey_${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${seconds}`;
 export function readCookie(request: Request, name: string) {
@@ -84,7 +107,7 @@ export async function customer(
   const raw = readCookie(request, product);
   if (!raw) return null;
   return env.CONTROL.prepare(
-    "SELECT c.* FROM sessions s JOIN customers c ON c.id=s.customer WHERE s.digest=? AND s.audience=? AND s.expires>?",
+    "SELECT c.* FROM sessions s JOIN hosted_accounts c ON c.id=s.customer WHERE s.digest=? AND s.audience=? AND s.expires>?",
   )
     .bind(
       await hash(raw),
@@ -113,6 +136,22 @@ export async function issueSession(
   return cookie(product, token, age);
 }
 export async function workspace(env: HostedEnv, customerId: string) {
+  const existing = await env.CONTROL.prepare(
+    "SELECT * FROM workspaces WHERE owner=?",
+  )
+    .bind(customerId)
+    .first<Slot>();
+  if (existing) return existing;
+  // An administrator receives their own workspace, never access to another
+  // customer's ledger. Re-check the grant in the atomic allocation statement.
+  await env.CONTROL.prepare(
+    `UPDATE workspaces SET owner=?
+     WHERE id=(SELECT id FROM workspaces WHERE owner IS NULL ORDER BY id LIMIT 1)
+     AND EXISTS(SELECT 1 FROM account_admins WHERE customer=?)
+     AND NOT EXISTS(SELECT 1 FROM workspaces WHERE owner=?)`,
+  )
+    .bind(customerId, customerId, customerId)
+    .run();
   return env.CONTROL.prepare("SELECT * FROM workspaces WHERE owner=?")
     .bind(customerId)
     .first<Slot>();
@@ -129,7 +168,7 @@ export async function reserve(env: HostedEnv, customerId: string) {
   assert(
     slot,
     503,
-    "All beta workspaces are occupied. You haven't been charged.",
+    "All hosted workspaces are currently occupied. Please try again later. You haven't been charged.",
   );
   return slot;
 }
@@ -144,7 +183,11 @@ export function redirect(url: string, cookieValue?: string) {
 }
 // The OIDC provider handles verified email, passwords, passkeys, and recovery.
 // The one-use state is also tied to the initiating browser cookie.
-export async function startIdentity(env: HostedEnv, request: Request, linkCustomer?: string) {
+export async function startIdentity(
+  env: HostedEnv,
+  request: Request,
+  linkCustomer?: string,
+) {
   assert(
     env.MELODY ? env.MELODY_CLIENT : env.IDENTITY_CLIENT && env.IDENTITY_SECRET,
     503,
@@ -157,7 +200,17 @@ export async function startIdentity(env: HostedEnv, request: Request, linkCustom
     900,
   );
   const verifier = randomToken();
-  const state = await challenge(env, env.MELODY ? "melody" : "identity", { verifier, linkCustomer, linkSession: linkCustomer ? await hash(readCookie(request,"session")) : undefined });
+  const destination = signInDestination(
+    new URL(request.url).searchParams.get("next") ?? undefined,
+  );
+  const state = await challenge(env, env.MELODY ? "melody" : "identity", {
+    verifier,
+    destination,
+    linkCustomer,
+    linkSession: linkCustomer
+      ? await hash(readCookie(request, "session"))
+      : undefined,
+  });
   const bytes = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(verifier),
@@ -166,7 +219,9 @@ export async function startIdentity(env: HostedEnv, request: Request, linkCustom
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-  const url = env.MELODY ? new URL("/oauth2/v1/authorize", portal(env)) : new URL("/authorize", env.IDENTITY_ORIGIN);
+  const url = env.MELODY
+    ? new URL("/oauth2/v1/authorize", portal(env))
+    : new URL("/authorize", env.IDENTITY_ORIGIN);
   url.search = new URLSearchParams({
     response_type: "code",
     scope: env.MELODY ? "openid profile" : "openid email",
@@ -176,6 +231,8 @@ export async function startIdentity(env: HostedEnv, request: Request, linkCustom
     code_challenge: pkce,
     code_challenge_method: "S256",
   }).toString();
+  if (env.MELODY && new URL(request.url).pathname === "/cloud/signup")
+    url.searchParams.set("step", "sign_up");
   return redirect(url.href, cookie("login", state, 600));
 }
 export async function finishIdentity(env: HostedEnv, req: Request) {
@@ -186,18 +243,29 @@ export async function finishIdentity(env: HostedEnv, req: Request) {
     400,
     "Restart sign-in in this browser.",
   );
-  const { verifier, linkCustomer, linkSession } = await consume(env, env.MELODY ? "melody" : "identity", state);
+  const { verifier, linkCustomer, linkSession, destination } = await consume(
+    env,
+    env.MELODY ? "melody" : "identity",
+    state,
+  );
   assert(query.get("code"), 400, "Sign-in was cancelled.");
   const identityFetch = (legacy: string, melody: string, init: RequestInit) =>
     env.MELODY
-      ? env.MELODY.fetch(new Request(new URL("/oauth2/v1/" + melody, portal(env)), init))
+      ? env.MELODY.fetch(
+          new Request(new URL("/oauth2/v1/" + melody, portal(env)), init),
+        )
       : fetch(new URL(legacy, env.IDENTITY_ORIGIN), init);
   const token = await identityFetch("/oauth/token", "token", {
     method: "POST",
     redirect: "manual",
     body: new URLSearchParams({
       grant_type: "authorization_code",
-      ...(env.MELODY ? { client_id: env.MELODY_CLIENT! } : { client_id: env.IDENTITY_CLIENT, client_secret: env.IDENTITY_SECRET }),
+      ...(env.MELODY
+        ? { client_id: env.MELODY_CLIENT! }
+        : {
+            client_id: env.IDENTITY_CLIENT,
+            client_secret: env.IDENTITY_SECRET,
+          }),
       redirect_uri: portal(env) + "/cloud/callback",
       code: query.get("code")!,
       code_verifier: verifier,
@@ -214,28 +282,63 @@ export async function finishIdentity(env: HostedEnv, req: Request) {
   assert(profile.ok, 401, "Could not verify your account.");
   const details = await profile.json();
   if (env.MELODY) {
-    const p = z.object({
-      authId: z.string().min(1),
-      socialAccountType: z.enum(["Google", "Apple"]).nullable(),
-      socialAccountId: z.string().min(1).nullable(),
-      email: z.email(),
-      emailVerified: z.boolean(),
-    }).parse(details);
+    const p = z
+      .object({
+        authId: z.string().min(1),
+        socialAccountType: z.enum(["Google", "Apple"]).nullable(),
+        socialAccountId: z.string().min(1).nullable(),
+        email: z.email(),
+        emailVerified: z.boolean(),
+      })
+      .parse(details);
     assert(p.emailVerified, 403, "Verify your email, then sign in again.");
-    assert(Boolean(p.socialAccountType) === Boolean(p.socialAccountId), 403, "Invalid identity.");
-    const issuer = p.socialAccountType === "Google" ? "https://accounts.google.com" : "https://appleid.apple.com";
-    const subject = p.socialAccountType ? issuer + "|" + p.socialAccountId : "melody:" + portal(env) + "|" + p.authId;
+    assert(
+      Boolean(p.socialAccountType) === Boolean(p.socialAccountId),
+      403,
+      "Invalid identity.",
+    );
+    const issuer =
+      p.socialAccountType === "Google"
+        ? "https://accounts.google.com"
+        : "https://appleid.apple.com";
+    const subject = p.socialAccountType
+      ? issuer + "|" + p.socialAccountId
+      : "melody:" + portal(env) + "|" + p.authId;
     if (linkCustomer) {
       const owner = await customer(env, req);
-      assert(owner && owner.id === linkCustomer && linkSession === await hash(readCookie(req,"session")), 403, "Sign in to the original account again.");
-      await env.CONTROL.prepare(`INSERT INTO login_identities(subject,customer)
+      assert(
+        owner &&
+          owner.id === linkCustomer &&
+          linkSession === (await hash(readCookie(req, "session"))),
+        403,
+        "Sign in to the original account again.",
+      );
+      await env.CONTROL.prepare(
+        `INSERT INTO login_identities(subject,customer)
         SELECT ?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE digest=? AND customer=? AND expires>?)
-        ON CONFLICT(subject) DO NOTHING`).bind(subject, owner.id, await hash(readCookie(req,"session")), owner.id, now()).run();
-      const linked = await env.CONTROL.prepare("SELECT customer FROM login_identities WHERE subject=?").bind(subject).first<{customer:string}>();
-      assert(linked?.customer === owner.id, 409, "This login belongs to another account.");
+        ON CONFLICT(subject) DO NOTHING`,
+      )
+        .bind(
+          subject,
+          owner.id,
+          await hash(readCookie(req, "session")),
+          owner.id,
+          now(),
+        )
+        .run();
+      const linked = await env.CONTROL.prepare(
+        "SELECT customer FROM login_identities WHERE subject=?",
+      )
+        .bind(subject)
+        .first<{ customer: string }>();
+      assert(
+        linked?.customer === owner.id,
+        409,
+        "This login belongs to another account.",
+      );
       return redirect("/cloud/security", cookie("login", "", 0));
     }
-    return completeSignIn(env, subject, p.email);
+    return completeSignIn(env, subject, p.email, destination);
   }
   const p = z
     .object({
@@ -249,44 +352,120 @@ export async function finishIdentity(env: HostedEnv, req: Request) {
     403,
     "Verify your email with the sign-in provider, then sign in again.",
   );
-  return completeSignIn(env, env.IDENTITY_ORIGIN + "|" + p.sub, p.email);
+  return completeSignIn(
+    env,
+    env.IDENTITY_ORIGIN + "|" + p.sub,
+    p.email,
+    destination,
+  );
 }
-export async function completeSignIn(env: HostedEnv, subject: string, email: string) {
-  const linked = await env.CONTROL.prepare("SELECT customer AS id FROM login_identities WHERE subject=?").bind(subject).first<{id:string}>();
-  const row = linked ?? await env.CONTROL.prepare(
-    "INSERT INTO customers(id,subject,email) VALUES(?,?,?) ON CONFLICT(subject) DO UPDATE SET email=excluded.email RETURNING id",
+export async function completeSignIn(
+  env: HostedEnv,
+  subject: string,
+  email: string,
+  destination?: string,
+) {
+  const existing = await env.CONTROL.prepare(
+    "SELECT customer FROM login_identities WHERE subject=? UNION ALL SELECT id FROM customers WHERE subject=? LIMIT 1",
   )
-    .bind(id(), subject, email)
-    .first<{ id: string }>();
+    .bind(subject, subject)
+    .first();
+  // Claim the reservation only after a provider has verified this email. Keep existing
+  // linked identities on their original account, even if two identities share an email.
+  const [, , identity] = await env.CONTROL.batch<{ id: string }>([
+    env.CONTROL.prepare(
+      `UPDATE customers SET subject=?, email=?, pending_free=0
+      WHERE pending_free=1 AND email=? COLLATE NOCASE
+      AND NOT EXISTS(SELECT 1 FROM login_identities WHERE subject=?)
+      AND NOT EXISTS(SELECT 1 FROM customers WHERE subject=?)`,
+    ).bind(subject, email, email, subject, subject),
+    env.CONTROL.prepare(
+      `INSERT INTO customers(id,subject,email)
+      SELECT ?,?,? WHERE NOT EXISTS(SELECT 1 FROM login_identities WHERE subject=?)
+      ON CONFLICT(subject) DO UPDATE SET email=excluded.email`,
+    ).bind(id(), subject, email, subject),
+    env.CONTROL.prepare(
+      `SELECT customer AS id FROM login_identities WHERE subject=?
+      UNION ALL SELECT id FROM customers WHERE subject=? LIMIT 1`,
+    ).bind(subject, subject),
+  ]);
+  const row = identity.results[0];
+  assert(row, 500, "Could not finish signing in.");
   await env.CONTROL.prepare(
     "INSERT INTO milestones(customer,event,day) SELECT ?,'signup',date('now') WHERE NOT EXISTS(SELECT 1 FROM milestones WHERE customer=? AND event='signup')",
   )
-    .bind(row!.id, row!.id)
+    .bind(row.id, row.id)
     .run();
-  return afterPrimary(env, row!.id);
+  const next =
+    !existing &&
+    env.MELODY &&
+    signInDestination(destination) === "/cloud/account"
+      ? "/cloud/security/setup"
+      : signInDestination(destination);
+  return afterPrimary(env, row.id, false, undefined, next);
 }
-export async function afterPrimary(env: HostedEnv, owner: string, primaryKey = false, expectedVersion?:number) {
-  const policy = await env.CONTROL.prepare(`
+export async function afterPrimary(
+  env: HostedEnv,
+  owner: string,
+  primaryKey = false,
+  expectedVersion?: number,
+  destination?: string,
+) {
+  const policy = await env.CONTROL.prepare(
+    `
     SELECT security_version, EXISTS(SELECT 1 FROM login_totp WHERE customer=c.id) AS otp,
       EXISTS(SELECT 1 FROM login_keys WHERE customer=c.id AND role='second') AS security_key
-    FROM customers c WHERE id=?`).bind(owner).first<{security_version:number;otp:number;security_key:number}>();
-  assert(policy && (expectedVersion === undefined || policy.security_version === expectedVersion), 403, "Security settings changed. Sign in again.");
+    FROM customers c WHERE id=?`,
+  )
+    .bind(owner)
+    .first<{ security_version: number; otp: number; security_key: number }>();
+  assert(
+    policy &&
+      (expectedVersion === undefined ||
+        policy.security_version === expectedVersion),
+    403,
+    "Security settings changed. Sign in again.",
+  );
   if (policy.otp || policy.security_key) {
-    const pending = await challenge(env, "second", { customer: owner, version: policy.security_version, primaryKey }, 300);
-    const res = redirect("/cloud/security/verify", cookie("pending", pending, 300));
+    const pending = await challenge(
+      env,
+      "second",
+      {
+        customer: owner,
+        version: policy.security_version,
+        primaryKey,
+        destination: signInDestination(destination),
+      },
+      300,
+    );
+    const res = redirect(
+      "/cloud/security/verify",
+      cookie("pending", pending, 300),
+    );
     res.headers.append("Set-Cookie", cookie("login", "", 0));
     res.headers.append("Set-Cookie", cookie("session", "", 0));
     return res;
   }
-  return finishSession(env, owner, policy.security_version);
+  return finishSession(env, owner, policy.security_version, destination);
 }
-export async function finishSession(env: HostedEnv, owner: string, version: number) {
+export async function finishSession(
+  env: HostedEnv,
+  owner: string,
+  version: number,
+  destination?: string,
+) {
   const token = randomToken();
-  const inserted = await env.CONTROL.prepare(`INSERT INTO sessions(digest,customer,audience,expires)
-    SELECT ?,id,?,? FROM customers WHERE id=? AND security_version=? RETURNING customer`)
-    .bind(await hash(token), portal(env), now()+86400, owner, version).first();
+  const inserted = await env.CONTROL.prepare(
+    `INSERT INTO sessions(digest,customer,audience,expires)
+    SELECT ?,id,?,? FROM customers WHERE id=? AND security_version=? RETURNING customer`,
+  )
+    .bind(await hash(token), portal(env), now() + 86400, owner, version)
+    .first();
   assert(inserted, 403, "Security settings changed. Sign in again.");
-  const res = redirect(portal(env) + "/cloud/account", cookie("session", token, 86400));
+  const res = redirect(
+    portal(env) + signInDestination(destination),
+    cookie("session", token, 86400),
+  );
   res.headers.append("Set-Cookie", cookie("login", "", 0));
   res.headers.append("Set-Cookie", cookie("pending", "", 0));
   return res;

@@ -63,9 +63,18 @@ export async function validateAuthorization(
     400,
     "Authorization requires code flow with PKCE S256",
   );
-  const client = await env.DB.prepare("SELECT * FROM oauth_clients WHERE id=?")
+  let client = await env.DB.prepare("SELECT * FROM oauth_clients WHERE id=?")
     .bind(params.get("client_id"))
     .first<{ id: string; name: string; redirect_uris: string }>();
+  if (!client && env.mcpRouting?.sharedClients) {
+    client = await env.mcpRouting.db.prepare("SELECT * FROM oauth_clients WHERE id=?")
+      .bind(params.get("client_id"))
+      .first<{ id: string; name: string; redirect_uris: string }>();
+    if (client)
+      await env.DB.prepare(
+        "INSERT INTO oauth_clients(id,name,redirect_uris,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",
+      ).bind(client.id, client.name, client.redirect_uris, now()).run();
+  }
   assert(client, 400, "Unknown OAuth client");
   const redirect = params.get("redirect_uri") ?? "";
   assert(
@@ -121,6 +130,10 @@ export async function authorize(
     )
     .run();
   redirect.searchParams.set("code", code);
+  if (env.mcpRouting)
+    await env.mcpRouting.db.prepare(
+      "INSERT INTO mcp_routes(kind,digest,workspace,expires) VALUES('code',?,?,?)",
+    ).bind(await hash(code), env.mcpRouting.workspace, now() + 300).run();
   return { redirect: redirect.toString() };
 }
 export async function exchangeCode(

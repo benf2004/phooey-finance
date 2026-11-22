@@ -7,9 +7,11 @@ import "./transaction-tags.css";
 export default function TransactionTags({
   value,
   onChange,
+  commitOnBlur = false,
 }: {
   value: string[];
   onChange: (tags: string[]) => void;
+  commitOnBlur?: boolean;
 }) {
   const { version } = useWorkspace();
   const available = useAsync(() => api<string[]>("/tags"), [version]);
@@ -68,14 +70,14 @@ export default function TransactionTags({
       menu.scrollTop += itemBounds.bottom - menuBounds.bottom;
   }, [activeOption, draft, open]);
 
-  function add(candidate = query) {
+  function add(candidate = query, focus = true) {
     const trimmed = candidate.trim();
     if (!trimmed || trimmed.length > 50 || value.length >= 20) return;
     const tag =
       known.find((item) => item.toLowerCase() === trimmed.toLowerCase()) ??
       trimmed;
     if (!selected.has(tag.toLowerCase())) onChange([...value, tag]);
-    input.current?.focus();
+    if (focus) input.current?.focus();
     setDraft("");
     setActive(-1);
     setOpen(false);
@@ -87,8 +89,10 @@ export default function TransactionTags({
       className="transaction-tags"
       aria-label="Transaction tags"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (commitOnBlur) add(query, false);
           setOpen(false);
+        }
       }}
     >
       <div className="field">
@@ -142,6 +146,7 @@ export default function TransactionTags({
                 setOpen(false);
                 setActive(-1);
               } else if (event.key === "Tab") {
+                if (commitOnBlur) add(query, false);
                 setOpen(false);
               }
             }}

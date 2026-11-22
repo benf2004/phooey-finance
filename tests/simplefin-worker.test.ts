@@ -129,7 +129,9 @@ async function selection(accountIds = ["bank"], removeUnselected = false) {
   expect(response.status, await response.clone().text()).toBe(200);
   return response.json();
 }
-async function queue(start?: string) {
+async function queue(
+  start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+) {
   const response = await post("/sync", start ? { start } : {});
   expect(response.status).toBe(200);
   return ((await response.json()) as { jobId: string }).jobId;
@@ -532,4 +534,64 @@ it("deletes manual accounts and requires an authenticated request", async () => 
     (await db.prepare("SELECT COUNT(*) AS count FROM accounts").first())?.count,
   ).toBe(0);
   expect((await removeAccount(created.id)).status).toBe(404);
+});
+
+it("requires an explicit first-sync date and does not auto-sync before one is chosen", async () => {
+  await connect();
+  await selection();
+  expect((await post("/sync", {})).status).toBe(400);
+  for (const start of ["2026-02-30", "1969-12-31", "2999-01-01"])
+    expect((await post("/sync", { start })).status).toBe(400);
+  const worker = await mf.getWorker();
+  if (!("scheduled" in worker) || typeof worker.scheduled !== "function")
+    throw new Error("Missing scheduled handler");
+  await worker.scheduled({ scheduledTime: Date.now(), cron: "17 6,18 * * *" });
+  expect(
+    (await db.prepare("SELECT COUNT(*) AS count FROM jobs").first())?.count,
+  ).toBe(0);
+  const start = new Date(Date.now() - 70 * 86400000).toISOString().slice(0, 10);
+  const jobId = await queue(start);
+  expect(
+    (await db.prepare("SELECT initial_sync_start FROM connections").first())
+      ?.initial_sync_start,
+  ).toBe(start);
+  const state = async () =>
+    (await (await get("/sync")).json()) as {
+      jobs: {
+        id: string;
+        status: string;
+        payload?: string;
+        syncProgress: {
+          percent: number;
+          completedWindows: number;
+          totalWindows: number;
+          recordsProcessed: number;
+          from: string;
+        };
+      }[];
+    };
+  let job = (await state()).jobs[0];
+  expect(job.payload).toBeUndefined();
+  expect(job.syncProgress).toMatchObject({
+    from: start,
+    percent: 0,
+    totalWindows: 2,
+  });
+  await consume(jobId); // fetch first date range
+  await consume(jobId); // commit first date range
+  job = (await state()).jobs[0];
+  expect(job.syncProgress).toMatchObject({
+    percent: 50,
+    completedWindows: 1,
+    recordsProcessed: 1,
+  });
+  await finish(jobId);
+  job = (await state()).jobs[0];
+  expect(job.status).toBe("complete");
+  expect(job.syncProgress).toMatchObject({
+    percent: 100,
+    completedWindows: 2,
+    recordsProcessed: 2,
+  });
+  expect((await post("/sync", {})).status).toBe(200);
 });

@@ -81,6 +81,7 @@ function config(slot?: string): V4WorkerOptions {
             id: "cs_a",
             url: "https://checkout.stripe.test/session",
             status: "open",
+            metadata: { offer: "finance-14-days" },
           });
         }
         if (p.includes("/subscriptions/"))

@@ -26,7 +26,7 @@ typography:
     letterSpacing: "-0.04em"
   document-title:
     fontFamily: "Noto Serif, Georgia, serif"
-    fontSize: "clamp(36px, 4.3vw, 68px)"
+    fontSize: "38px"
     lineHeight: 1.12
     letterSpacing: "-0.04em"
   control:
@@ -103,7 +103,7 @@ The invoice heading uses Noto Serif with a Georgia fallback. The font selected f
 
 On Finance desktop, the sidebar holds navigation and workspace tools. The overview pairs its period and currency selectors with the heading. Income, expenses and net sit above the chart. The register and category breakdown form the next two columns and stack at 740px.
 
-Invoicer places its sheet beside an action rail that stays in view as the document scrolls. At 900px the suite navigation becomes a menu. At 720px the sheet and controls use a single column. Place the logo, parties, dates, items and totals in document order.
+Invoicer uses a compact sidebar with a business switcher and places its sheet beside an action rail that stays in view as the document scrolls. At 900px the suite navigation becomes a menu. At 720px the sheet and controls use a single column. Place the logo, parties, dates, items and totals in document order.
 
 ## Elevation & Depth
 
@@ -115,10 +115,10 @@ Report panels use gently rounded corners, while the invoice sheet and its fields
 
 ## Components
 
-- **Navigation.** Finance uses a green highlight for the active sidebar item. Invoicer marks the active top-navigation link with a warm underline.
+- **Navigation.** Finance uses a green highlight for the active sidebar item. Invoicer uses the same green sidebar highlight and keeps business switching above the navigation.
 - **Buttons.** Save draft is a full-width green action in the desktop rail. Preview PDF and PDF use bordered secondary buttons. Issuing has its own confirmation.
 - **Chart switch.** Line, Bars and Table share one bordered group. The selected button carries a dark fill and a pressed state. Grouping has its own selector.
-- **Fields.** On-sheet inputs have visible borders and reveal a green outline on focus. Optional party contact information and adjustments use disclosures.
+- **Fields.** On-sheet value inputs have visible borders. Document labels are native inputs with transparent borders at rest, a gray border on hover, and an emerald border and fine ring on focus; clicking edits the label directly without changing its size. Optional party contact information and adjustments use disclosures.
 - **Status.** A compact tinted badge names the invoice’s state in words.
 - **Category rows.** Each row pairs a horizontal expense bar with the category name and amount. Selecting a row opens the corresponding transactions.
 

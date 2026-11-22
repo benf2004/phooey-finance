@@ -26,7 +26,27 @@ async function stripe(
   assert(res.ok, 502, "The payment provider is unavailable. Please retry.");
   return (await res.json()) as any;
 }
+export const eligibleForTrial = (c: Customer) =>
+  !c.subscription && !c.paid_until && !c.trial_ends_at;
+const trialOffer = "finance-14-days";
+
+export async function refreshCheckout(env: HostedEnv, c: Customer) {
+  if (!c.checkout_id || !c.stripe_customer) return;
+  const session = await stripe(
+    env,
+    "checkout/sessions/" + encodeURIComponent(c.checkout_id),
+  );
+  if (
+    session.status === "complete" &&
+    session.customer === c.stripe_customer &&
+    session.subscription
+  )
+    await reconcile(env, session.subscription);
+}
+
 export async function checkout(env: HostedEnv, c: Customer) {
+  assert(!c.is_admin, 409, "Administrator accounts already include dashboard access.");
+  assert(!c.complimentary, 409, "Your account already has complimentary access.");
   assert(c.paid_until <= now(), 409, "Your subscription is already active.");
   if (c.subscription) {
     const previous = await stripe(
@@ -71,7 +91,17 @@ export async function checkout(env: HostedEnv, c: Customer) {
       env,
       "checkout/sessions/" + encodeURIComponent(c.checkout_id),
     );
-    if (prior.status === "open") return prior.url as string;
+    if (prior.status === "open") {
+      if (eligibleForTrial(c) === (prior.metadata?.offer === trialOffer))
+        return prior.url as string;
+      // Replace pre-launch checkout links that would bill a new subscriber immediately.
+      await stripe(
+        env,
+        "checkout/sessions/" + encodeURIComponent(c.checkout_id) + "/expire",
+        {},
+        "expire-" + c.checkout_id,
+      );
+    }
     if (prior.status === "complete" && prior.subscription) {
       await reconcile(env, prior.subscription);
       const after = await env.CONTROL.prepare(
@@ -88,16 +118,23 @@ export async function checkout(env: HostedEnv, c: Customer) {
       .run();
   }
   const attempt = await env.CONTROL.prepare(
-    "UPDATE customers SET checkout_attempt=COALESCE(checkout_attempt,?) WHERE id=? AND paid_until<=? RETURNING checkout_attempt",
+    "UPDATE customers SET checkout_attempt=COALESCE(checkout_attempt,?) WHERE id=? AND paid_until<=? AND NOT EXISTS(SELECT 1 FROM free_accounts WHERE customer=customers.id) AND NOT EXISTS(SELECT 1 FROM account_admins WHERE customer=customers.id) RETURNING *",
   )
     .bind(id(), c.id, now())
-    .first<{ checkout_attempt: string }>();
+    .first<Customer>();
   assert(attempt, 409, "The subscription has changed. Refresh your account.");
   const session = await stripe(
     env,
     "checkout/sessions",
     {
       mode: "subscription",
+      ...(eligibleForTrial(attempt)
+        ? {
+            "subscription_data[trial_period_days]": "14",
+            "metadata[offer]": trialOffer,
+            payment_method_collection: "always",
+          }
+        : {}),
       "payment_method_types[0]": "card",
       "automatic_tax[enabled]":
         env.STRIPE_AUTOMATIC_TAX === "true" ? "true" : "false",
@@ -107,10 +144,11 @@ export async function checkout(env: HostedEnv, c: Customer) {
       customer: c.stripe_customer!,
       "line_items[0][price]": env.STRIPE_PRICE,
       "line_items[0][quantity]": "1",
-      success_url: portal(env) + "/cloud/account?paid=1",
+      success_url: portal(env) + "/cloud/account?checkout=complete",
       cancel_url: portal(env) + "/cloud/account",
     },
-    "checkout-" + attempt.checkout_attempt,
+    (eligibleForTrial(attempt) ? "trial-checkout-" : "checkout-") +
+      attempt.checkout_attempt,
   );
   await env.CONTROL.prepare(
     "UPDATE customers SET checkout_id=? WHERE id=? AND checkout_attempt=?",
@@ -142,7 +180,9 @@ async function reconcile(env: HostedEnv, subscriptionId: string) {
   if (!customer) return;
   const sub = await stripe(
     env,
-    "subscriptions/" + encodeURIComponent(subscriptionId),
+    "subscriptions/" +
+      encodeURIComponent(subscriptionId) +
+      "?expand[]=latest_invoice",
   );
   if (!sub.items?.data.some((item: any) => item.price.id === env.STRIPE_PRICE))
     return;
@@ -152,15 +192,29 @@ async function reconcile(env: HostedEnv, subscriptionId: string) {
     customer.paid_until > now()
   )
     return;
-  const active = sub.status === "active";
+  const invoice = sub.latest_invoice;
+  const active =
+    sub.status === "active" &&
+    (!sub.trial_end ||
+      (invoice?.status === "paid" &&
+        invoice.billing_reason !== "subscription_create"));
   // Failed renewals must not grant a fresh unpaid year. Keep only an already earned term.
-  const until = active
-    ? sub.current_period_end
-    : Math.min(customer.paid_until, sub.ended_at ?? customer.paid_until);
+  const trialEnd = sub.status === "trialing" ? sub.trial_end : 0;
+  if (sub.status === "trialing")
+    assert(
+      Number.isSafeInteger(trialEnd) && trialEnd > 0,
+      502,
+      "Invalid trial end from Stripe.",
+    );
+  const until =
+    trialEnd ||
+    (active
+      ? sub.current_period_end
+      : Math.min(customer.paid_until, sub.ended_at ?? customer.paid_until));
   const result = await env.CONTROL.prepare(
-    "UPDATE customers SET subscription=?,paid_until=?,billing_revision=billing_revision+1 WHERE id=? AND billing_revision=?",
+    "UPDATE customers SET subscription=?,paid_until=?,trial_ends_at=?,billing_revision=billing_revision+1 WHERE id=? AND billing_revision=?",
   )
-    .bind(sub.id, until, customer.id, customer.billing_revision)
+    .bind(sub.id, until, trialEnd, customer.id, customer.billing_revision)
     .run();
   assert(result.meta.changes === 1, 503, "Concurrent billing update. Retry.");
   if (active)

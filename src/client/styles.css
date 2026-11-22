@@ -1991,30 +1991,11 @@ table.transactions-table td {
 
 .view-switch,.tag-shelf { display:flex; gap:4px; margin:0 0 16px; align-items:center; }
 .view-switch { width:max-content; padding:3px; border:1px solid var(--line); border-radius:8px; background:var(--surface-soft); }
-.view-switch button,.tag-shelf button,.grid-actions button { background:transparent; border:0; color:var(--muted); border-radius:5px; padding:6px 11px; display:inline-flex; align-items:center; gap:6px; font:inherit; cursor:pointer; }
+.view-switch button,.tag-shelf button { background:transparent; border:0; color:var(--muted); border-radius:5px; padding:6px 11px; display:inline-flex; align-items:center; gap:6px; font:inherit; cursor:pointer; }
 .view-switch button[aria-pressed=true] { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px #172b2320; font-weight:600; }
 .tag-shelf { flex-wrap:wrap; }
 .tag-shelf button { border:1px solid var(--line); }
 .tag-shelf button[aria-pressed=true],.grid-chips span { color:var(--green); background:var(--green-soft); }
-.ledger-sheet { background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-.panel>.ledger-sheet { border:0; }
-.ledger-sheet table { border-collapse:separate; border-spacing:0; min-width:100%; width:max-content; font-variant-numeric:tabular-nums; }
-.ledger-sheet :is(td,th) { height:39px; padding:0; border:0; border-right:1px solid var(--line); border-bottom:1px solid var(--line); text-align:left; }
-.ledger-sheet thead th { background:var(--surface-soft); color:var(--muted); font-size:12px; font-weight:600; letter-spacing:0; text-transform:none; padding:0 12px; }
-.ledger-sheet tbody th { width:36px; text-align:center; background:var(--surface-soft); color:var(--muted); font-size:11px; font-weight:400; }
-.grid-value { display:block; font:inherit; color:inherit; background:transparent; cursor:text; text-align:left; width:100%; max-width:32ch; min-width:9ch; min-height:38px; padding:8px 12px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; border:0; border-radius:0; }
-.grid-value:hover { background:var(--green-soft); }
-.grid-value:focus-visible { outline:2px solid var(--green); outline-offset:-2px; }
-.ledger-sheet .fixed-cell { background:var(--surface-soft); color:var(--muted); padding:0 12px; }
-.ledger-sheet .editing-cell { min-width:190px; box-shadow:inset 0 0 0 2px var(--green); }
-.grid-editor { padding:7px; max-width:350px; }
-.grid-editor input,.grid-editor select { min-height:32px; width:100%; }
-.grid-actions { display:flex; align-items:center; gap:4px; padding-top:5px; }
-.grid-actions button { padding:4px 7px; color:var(--green); background:var(--green-soft); font-size:12px; }
-.grid-editor small[role=alert] { display:block; max-width:27ch; color:var(--red); white-space:normal; }
-.sheet-guide { display:flex; gap:9px; align-items:center; background:var(--surface); color:var(--muted); font-size:12px; padding:11px 14px; border-bottom:1px solid var(--line); }
-.sheet-guide [role=status] { color:var(--green); margin-left:auto; }
-.sheet-empty { padding:16px; }
 .grid-chips { display:inline-flex; gap:4px; }
 .grid-chips span { font-size:12px; border-radius:4px; padding:2px 6px; }
 .grid-swatch { display:inline-block; width:10px; height:10px; margin-right:7px; border-radius:50%; }

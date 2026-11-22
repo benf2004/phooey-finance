@@ -6,15 +6,15 @@
     <title>Bookkeeping and invoices for solopreneurs · phooey! finance</title>
     <meta
       name="description"
-      content="Bookkeeping and invoicing for a one-person business. The hosted bundle costs $29 per year. Optional bank syncing is billed separately."
+      content="Bookkeeping and invoicing for a one-person business. Try the hosted bundle free for 14 days, then $29 per year. Optional bank syncing is billed separately."
     />
     <meta property="og:title" content="phooey! finance for solopreneurs" />
     <meta
       property="og:description"
-      content="Bookkeeping and invoicing for a one-person business. The hosted bundle costs $29 per year. Optional bank syncing is billed separately."
+      content="Bookkeeping and invoicing for a one-person business. Try the hosted bundle free for 14 days, then $29 per year. Optional bank syncing is billed separately."
     />
     <link rel="icon" href="/business/assets/icon.svg" />
-    <link rel="preload" href="/business/fonts/dm-serif-text-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/business/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/business/brand.css" />
   </head>
   <body class="marketing-home">
@@ -24,22 +24,24 @@
       /></a>
       <nav aria-label="Main navigation">
         <a href="/dashboard-preview">Dashboard preview</a
-        ><a href="/business/pricing/">Pricing</a
+        ><a href="https://getinvoicer.phooey.foo/">Invoicer</a><a href="#faq">FAQ</a><a href="/business/pricing/">Pricing</a
         ><a href="/dashboard">Open dashboard</a>
       </nav>
     </header>
     <main>
       <section class="hero">
         <div>
-          <h1>The books for your one-person business.</h1>
+          <span class="eyebrow">Finance + Invoicer</span>
+          <h1>Your business.<br>Your books.<br>A little less fuss.</h1>
           <p>
             Track what came in, see what you spent, and invoice your clients
             from one workspace.
           </p>
           <div class="actions">
-            <a class="button" href="/cloud/start">Get started · $29/year</a
+            <a class="button" href="/cloud/signup">Start your 14-day free trial</a
             ><a href="/dashboard-preview">Preview the dashboard</a>
           </div>
+          <p class="trial-terms">Card required. Then $29/year unless you cancel.</p>
         </div>
         <figure class="sample-report" aria-labelledby="sample-caption">
           <figcaption id="sample-caption">
@@ -105,7 +107,7 @@
           </div>
         </figure>
       </section>
-      <section class="band">
+      <section class="band feature-row">
         <h2>From transaction to quarterly review</h2>
         <p>
           Import a CSV or record a transaction by hand. Categorize spending,
@@ -113,12 +115,13 @@
           estimated tax payments.
         </p>
       </section>
-      <section class="band">
+      <section class="band feature-row">
         <h2>From draft to paid invoice</h2>
         <p>
           Edit customer details and line items on the invoice. Save a draft,
           issue it when you’re ready, and share a link or download the PDF.
           Record payments against the balance due.
+          <a href="https://getinvoicer.phooey.foo/">Explore Invoicer</a> · <a href="https://invoicer.phooey.foo/">Open Invoicer</a>
         </p>
       </section>
       <section class="band prices">
@@ -134,6 +137,14 @@
           </p>
           <a href="/business/pricing/">See pricing</a>
         </div>
+      </section>
+      <section class="band faq" id="faq" aria-labelledby="faq-title"><h2 id="faq-title">A few good questions</h2>
+        <details><summary>What’s included in the hosted plan?</summary><p>Finance and Invoicer are included for $29 per year after a 14-day free trial. A card is required to start. Optional bank syncing has a separate subscription.</p></details>
+        <details><summary>Can I try the dashboard before signing up?</summary><p>Yes. <a href="/dashboard-preview">Explore the interactive preview</a> with sample transactions, accounts, categories, and reports. Changes in the preview only affect the example data in your browser.</p></details>
+        <details><summary>Do I need to connect my bank?</summary><p>No. Import a CSV or enter transactions yourself. Bank syncing is optional.</p></details>
+        <details><summary>Can I invoice for more than one business?</summary><p>Yes. Switch businesses in Invoicer’s sidebar. Each business has its own customers, branding, invoice numbering, and API keys.</p></details>
+        <details><summary>Can an AI assistant work with my invoices?</summary><p>Yes. Create a business-specific API key in Invoicer’s API &amp; MCP page. Choose read-only or read-and-write access, and revoke it whenever you need.</p></details>
+        <details><summary>Can I host it myself?</summary><p>Yes. The source is on <a href="https://github.com/benf2004/phooey-finance">GitHub</a> under AGPL-3.0. Self-hosting uses your own Cloudflare account and resources.</p></details>
       </section>
     </main>
     <footer>

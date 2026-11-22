@@ -21,6 +21,7 @@ import {
   claimJob,
   requestSync,
   syncWindow,
+  syncJobProgress,
 } from "../src/server/sync";
 import { parseCSV } from "../src/shared/csv";
 import { addPayment, taxLedger } from "../src/server/taxes";
@@ -78,7 +79,7 @@ async function account() {
 }
 async function connection(generation = "one") {
   await env.DB.prepare(
-    "INSERT INTO connections(id,secret,generation,selected_accounts,selection_ready) VALUES('simplefin',?,?, '[\"bank1\"]',1) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,secret=excluded.secret,last_success=NULL",
+    "INSERT INTO connections(id,secret,generation,selected_accounts,selection_ready,initial_sync_start) VALUES('simplefin',?,?, '[\"bank1\"]',1,date('now','-30 days')) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,secret=excluded.secret,last_success=NULL",
   )
     .bind(
       await encrypt(
@@ -350,9 +351,19 @@ describe("durable jobs and recovery", () => {
     );
     const job = await requestSync(env);
     await run(job.jobId); // stage
-    await run(job.jobId);
-    await run(job.jobId);
-    expect((await run(job.jobId))!.status).toBe("complete");
+    const firstChunk = await run(job.jobId);
+    expect(
+      syncJobProgress(JSON.parse(firstChunk!.payload), firstChunk!.status),
+    ).toMatchObject({ percent: 48, recordsProcessed: 100 });
+    const secondChunk = await run(job.jobId);
+    expect(
+      syncJobProgress(JSON.parse(secondChunk!.payload), secondChunk!.status),
+    ).toMatchObject({ percent: 97, recordsProcessed: 200 });
+    const finished = await run(job.jobId);
+    expect(finished!.status).toBe("complete");
+    expect(
+      syncJobProgress(JSON.parse(finished!.payload), finished!.status),
+    ).toMatchObject({ percent: 100, recordsProcessed: 205 });
     expect((await ledger.transactions()).total).toBe(205);
     expect((await ledger.accounts())[0].kind).toBe("other");
     expect(

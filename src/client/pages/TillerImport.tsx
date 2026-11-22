@@ -18,7 +18,7 @@ export function PublicTillerPreview() {
   return (
     <main className="content">
       <a href="/business/">phooey! finance</a>
-      <h1>Preview a Tiller Transactions CSV</h1>
+      <h1>Preview a transactions CSV</h1>
       <p>
         Your file stays in this browser. Choose destination accounts and check
         bank duplicates after signing in.
@@ -55,7 +55,7 @@ function ImportForm({
   return (
     <div className="form-stack">
       <label>
-        Tiller Transactions CSV
+        Transactions CSV
         <input
           type="file"
           accept=".csv,text/csv"
@@ -122,7 +122,7 @@ function GroupPreview({
       categories.find((c) => c.name.toLowerCase() === n.toLowerCase())?.id ??
       "";
   const data = () => ({
-    name: "Tiller – " + group.account,
+    name: "Imported – " + group.account,
     account_id: account,
     text: [
       [

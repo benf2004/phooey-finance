@@ -206,7 +206,7 @@ export default function Taxes() {
               <strong>
                 {freshProfit ? formatMoney(ledgerProfit) : "Unavailable"}
               </strong>
-              . Uses actual transactions in Tiller's four tax periods. No future
+              . Uses actual transactions in the four estimated-tax periods. No future
               earnings are projected.
             </div>
           </div>

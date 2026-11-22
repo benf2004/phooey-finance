@@ -66,7 +66,7 @@ export async function resetData(
     );
     statements.push(
       env.DB.prepare(
-        "UPDATE connections SET selected_accounts='[]',selection_ready=0,status='selecting',generation=?,last_success=NULL,resume_from=NULL,last_error=NULL",
+        "UPDATE connections SET selected_accounts='[]',selection_ready=0,status='selecting',generation=?,last_success=NULL,resume_from=NULL,initial_sync_start=NULL,last_error=NULL",
       ).bind(id()),
     );
   }

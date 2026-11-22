@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { assert, now } from "../server/util";
+import { assert } from "../server/util";
 import {
+  hasAccess,
   challenge,
   consume,
   cookie,
@@ -48,7 +49,7 @@ export async function authorizeMobile(
   c: Customer,
 ) {
   const slot = await workspace(env, c.id);
-  assert(slot && c.paid_until > now(), 403, "An active workspace is required.");
+  assert(slot && hasAccess(c), 403, "An active workspace is required.");
   const pending = await consume(
     env,
     "mobile-browser",

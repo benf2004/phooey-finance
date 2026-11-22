@@ -15,8 +15,9 @@ import {
   Menu,
   LockKeyhole,
   ShieldCheck,
+  Plus,
 } from "lucide-react";
-import { api, body, setCsrf } from "./api";
+import { api, body, setCsrf, setBusiness } from "./api";
 import { Editor } from "./editor";
 import { ApiPage, Customers, Invoices, Presets, SettingsPage } from "./pages";
 import "./styles.css";
@@ -25,6 +26,21 @@ import "./workspace.css";
 const SharedInvoice = lazy(() => import("./shared-invoice"));
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [businesses, setBusinesses] = useState<{id: string; name: string}[]>([]);
+  const [businessId, setBusinessId] = useState(localStorage.getItem("invoicer-business") || "default");
+  const [businessName, setBusinessName] = useState("");
+  const [addingBusiness, setAddingBusiness] = useState(false);
+  const [businessBusy, setBusinessBusy] = useState(false);
+  useEffect(() => {
+    if (!authenticated) return;
+    const refresh = () => api<{items: {id: string; name: string}[]}>("/businesses").then(r => {
+      setBusinesses(r.items);
+      if (!r.items.some(b => b.id === (localStorage.getItem("invoicer-business") || "default"))) { setBusinessId("default"); setBusiness("default"); }
+    }).catch(e => notify(e.message, true));
+    void refresh();
+    window.addEventListener("business-updated", refresh);
+    return () => window.removeEventListener("business-updated", refresh);
+  }, [authenticated]);
   const [checking, setChecking] = useState(true);
   const [path, setPath] = useState(currentPath());
   const draftDirty = useRef(false);
@@ -112,7 +128,7 @@ function App() {
     { path: "/customers", label: "Customers", icon: Users },
     { path: "/presets", label: "Branding presets", icon: Palette },
     { path: "/settings", label: "Business settings", icon: Settings },
-    { path: "/api", label: "Developer API", icon: Code2 },
+    { path: "/api", label: "API & MCP", icon: Code2 },
   ];
   const current = path === "/new" || path.startsWith("/invoices/") ? "/" : path;
   return (
@@ -159,12 +175,13 @@ function App() {
             >
               <Menu size={18} /> Menu
             </button>
+            <div className="business-switcher"><label htmlFor="business-switch">Business</label><select id="business-switch" value={businessId} onChange={e => { if (!canLeaveDraft()) return; setBusiness(e.target.value); setBusinessId(e.target.value); navigate("/"); }}>{businesses.map(b => <option value={b.id} key={b.id}>{b.name}</option>)}</select><button className="text-button" onClick={() => setAddingBusiness(!addingBusiness)}><Plus size={14}/> Add business</button>{addingBusiness && <form onSubmit={async e => { e.preventDefault(); if (!canLeaveDraft()) return; setBusinessBusy(true); try { const b = await api<{id:string;name:string}>("/businesses", {method:"POST", body:body({name:businessName})}); setBusinesses(old => [...old,b]); setBusiness(b.id); setBusinessId(b.id); setAddingBusiness(false); setBusinessName(""); navigate("/settings"); } catch(e) { notify((e as Error).message,true); } finally { setBusinessBusy(false); } }}><input aria-label="New business name" placeholder="Business name" maxLength={200} required value={businessName} onChange={e => setBusinessName(e.target.value)}/><button className="button primary" disabled={businessBusy}>Create business</button></form>}</div>
             <nav
               id="invoice-nav"
               className={mobileMenu ? "open" : ""}
               aria-label="Workspace"
             >
-              {bundled && <a href="/">Finance</a>}
+              <a href="https://finance.phooey.foo/">Finance <ArrowRight size={15} /></a>
               {nav.map((n) => (
                 <a
                   key={n.path}
@@ -177,7 +194,7 @@ function App() {
                     if (canLeaveDraft()) navigate(n.path);
                   }}
                 >
-                  {n.label}
+                  <n.icon size={18} /> {n.label}
                 </a>
               ))}
             </nav>
@@ -201,7 +218,7 @@ function App() {
             </button>
           </header>
           <div className="invoice-main">
-            <main key={path}>
+            <main key={businessId + path}>
               {path === "/new" || path.startsWith("/invoices/") ? (
                 <Editor
                   key={path}
@@ -227,7 +244,7 @@ function App() {
               ) : path === "/settings" ? (
                 <SettingsPage navigate={navigate} notify={notify} />
               ) : path === "/api" ? (
-                <ApiPage />
+                <ApiPage notify={notify} />
               ) : (
                 <Invoices navigate={navigate} notify={notify} />
               )}
@@ -277,6 +294,7 @@ function Login({ onLogin }: { onLogin: (csrf: string) => void }) {
       setBusy(false);
     }
   }
+  if (bundled) return <main className="invoice-login"><div className="login-form"><div className="login-wordmark"><img src={invoicePath('/phooey-wordmark.svg')} alt="phooey!"/> invoicer</div><h1>Sign in to Invoicer</h1><a className="button primary" href="/">Continue to sign in <ArrowRight size={17}/></a></div></main>;
   return (
     <main className="invoice-login">
       <form className="login-form" onSubmit={(e) => void login(e)}>

@@ -1,0 +1,669 @@
+diff --git a/server/src/handlers/identity/view.tsx b/server/src/handlers/identity/view.tsx
+index e0fecfa..6864267 100644
+--- a/server/src/handlers/identity/view.tsx
++++ b/server/src/handlers/identity/view.tsx
+@@ -7,7 +7,6 @@ import {
+ import { HtmlEscapedString } from 'hono/utils/html'
+ import {
+   typeConfig,
+-  localeConfig,
+   routeConfig,
+ } from 'configs'
+ import {
+@@ -38,7 +37,7 @@ const viewRender = async (
+   return c.html(<html lang={locale}>
+     <head>
+       <meta charset='utf-8' />
+-      <title>{localeConfig.common.documentTitle[locale]}</title>
++      <title>phooey! finance</title>
+       <link
+         rel='icon'
+         type='image/x-icon'
+@@ -61,18 +60,6 @@ const viewRender = async (
+             href='/client.css'
+           />
+         )}
+-      <link
+-        rel='preconnect'
+-        href='https://fonts.googleapis.com'
+-      />
+-      <link
+-        rel='preconnect'
+-        href='https://fonts.gstatic.com'
+-      />
+-      <link
+-        href={branding.fontUrl}
+-        rel='stylesheet'
+-      />
+       <Style>
+         {css`
+           :root {
+@@ -105,6 +92,7 @@ const viewRender = async (
+             src='/client.js'
+           />
+         )}
++      <script defer src='/finance-security.js' />
+       {propsScript}
+     </body>
+   </html>)
+diff --git a/server/src/pages/blocks/Layout.test.tsx b/server/src/pages/blocks/Layout.test.tsx
+index edfb527..e3f0ecf 100644
+--- a/server/src/pages/blocks/Layout.test.tsx
++++ b/server/src/pages/blocks/Layout.test.tsx
+@@ -59,7 +59,7 @@ describe(
+         const logo = container.querySelector('img')
+         expect(logo).toBeDefined()
+         expect(logo?.getAttribute('src')).toBe(dummyLogo)
+-        expect(logo?.getAttribute('alt')).toBe('Logo')
++        expect(logo?.getAttribute('alt')).toBe('phooey! finance')
+       },
+     )
+ 
+@@ -67,7 +67,7 @@ describe(
+       'renders LocaleSelector when multiple locales are provided',
+       () => {
+         const container = setup()
+-        const localeSelectorDiv = container.querySelector('div.absolute.right-0')
++        const localeSelectorDiv = container.querySelector('select[aria-label="Select Locale"]')
+         expect(localeSelectorDiv).toBeDefined()
+       },
+     )
+@@ -76,7 +76,7 @@ describe(
+       'does not render LocaleSelector when only one locale is provided',
+       () => {
+         const container = setup({ locales: singleLocale })
+-        const localeSelectorDiv = container.querySelector('div.absolute.right-0')
++        const localeSelectorDiv = container.querySelector('select[aria-label="Select Locale"]')
+         expect(localeSelectorDiv).toBeNull()
+       },
+     )
+diff --git a/server/src/pages/blocks/Layout.tsx b/server/src/pages/blocks/Layout.tsx
+index 4acd8b2..a412668 100644
+--- a/server/src/pages/blocks/Layout.tsx
++++ b/server/src/pages/blocks/Layout.tsx
+@@ -13,37 +13,15 @@ export interface LayoutProps {
+ const Layout = ({
+   children, locale, locales, logoUrl, onSwitchLocale,
+ }: LayoutProps) => (
+-  <main className='flex flex-col items-center justify-center w-full h-screen bg-layoutColor text-labelColor'>
+-    <section className='flex flex-col justify-center items-center bg-white box-shadow rounded-lg'>
+-      <section className='flex flex-col items-center gap-4 max-h-[80vh] p-8 overflow-y-auto overflow-x-hidden'>
+-        <header className='relative flex w-full justify-center items-center'>
+-          <img
+-            className='w-10'
+-            src={logoUrl}
+-            alt='Logo'
+-          />
+-          {locales.length > 1 && (
+-            <div className='absolute right-0'>
+-              <LocaleSelector
+-                locale={locale}
+-                locales={locales}
+-                onChange={onSwitchLocale}
+-              />
+-            </div>
+-          )}
+-        </header>
+-        <section className='flex flex-col justify-center items-center gap-4'>
+-          {children}
+-        </section>
+-        <a
+-          target='__blank'
+-          href='https://github.com/ValueMelody/melody-auth'
+-          className='text-sm mt-2'
+-        >
+-          {layout.poweredByAuth[locale]}
+-        </a>
+-      </section>
+-    </section>
++  <main className='finance-auth'>
++    <header className='finance-brand'>
++      <a href='https://getfinance.phooey.foo/'><img src={logoUrl} alt='phooey! finance' /></a>
++      {locales.length > 1 && <LocaleSelector locale={locale} locales={locales} onChange={onSwitchLocale} />}
++    </header>
++    <section className='finance-content'>{children}</section>
++    <footer className='finance-credit'>
++      <a href='https://github.com/ValueMelody/melody-auth' target='_blank' rel='noreferrer'>{layout.poweredByAuth[locale]}</a>
++    </footer>
+   </main>
+ )
+ 
+diff --git a/server/src/pages/blocks/SignIn.test.tsx b/server/src/pages/blocks/SignIn.test.tsx
+index 303e9cd..96109da 100644
+--- a/server/src/pages/blocks/SignIn.test.tsx
++++ b/server/src/pages/blocks/SignIn.test.tsx
+@@ -176,7 +176,7 @@ describe(
+         const container = setup()
+         const facebookSignIn = container.querySelector('#facebook-login-btn')
+         const githubSignIn = container.querySelector('#github-login-btn')
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         const discordSignIn = container.querySelector('#discord-login-btn')
+         const appleSignIn = container.querySelector('#apple-login-btn')
+         expect(facebookSignIn).not.toBeNull()
+@@ -205,7 +205,7 @@ describe(
+ 
+         const facebookSignIn = container.querySelector('#facebook-login-btn')
+         const githubSignIn = container.querySelector('#github-login-btn')
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         const discordSignIn = container.querySelector('#discord-login-btn')
+         const appleSignIn = container.querySelector('#apple-login-btn')
+         expect(facebookSignIn).toBeNull()
+@@ -233,7 +233,7 @@ describe(
+         const container = setup(props)
+ 
+         // Google should be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         expect(googleSignIn).not.toBeNull()
+ 
+         // Facebook Github and Discord should not be present
+@@ -264,7 +264,7 @@ describe(
+         const container = setup(props)
+ 
+         // Google should not be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         expect(googleSignIn).toBeNull()
+ 
+         // Facebook should be present
+@@ -301,7 +301,7 @@ describe(
+         const container = setup(props)
+ 
+         // Google should not be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         expect(googleSignIn).toBeNull()
+ 
+         // Facebook should not be present
+@@ -339,7 +339,7 @@ describe(
+         const container = setup(props)
+ 
+         // Google should not be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         expect(googleSignIn).toBeNull()
+ 
+         // Facebook should not be present
+@@ -377,7 +377,7 @@ describe(
+         const container = setup(props)
+ 
+         // Google should not be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         expect(googleSignIn).toBeNull()
+ 
+         // Facebook should not be present
+@@ -650,7 +650,7 @@ describe(
+         })
+ 
+         // Other social sign-in buttons should not be present
+-        const googleSignIn = container.querySelector('#g_id_onload')
++        const googleSignIn = container.querySelector('#finance-google')
+         const facebookSignIn = container.querySelector('#facebook-login-btn')
+         const githubSignIn = container.querySelector('#github-login-btn')
+         const discordSignIn = container.querySelector('#discord-login-btn')
+diff --git a/server/src/pages/blocks/SignIn.tsx b/server/src/pages/blocks/SignIn.tsx
+index 383ba4f..37349fc 100644
+--- a/server/src/pages/blocks/SignIn.tsx
++++ b/server/src/pages/blocks/SignIn.tsx
+@@ -1,6 +1,7 @@
++import FinanceMethods from './FinanceMethods'
+ import {
+   ViewTitle, PasswordField, PrimaryButton, SubmitError, SecondaryButton,
+-  GoogleSignIn, FacebookSignIn, GithubSignIn, DiscordSignIn, OidcSignIn, AppleSignIn,
++  FacebookSignIn, GithubSignIn, DiscordSignIn, OidcSignIn,
+   Banner,
+ } from 'pages/components'
+ import { typeConfig } from 'configs'
+@@ -76,6 +77,7 @@ const SignIn = ({
+           text={banner.locales.find((bannerLocale) => bannerLocale.locale === locale)?.value || banner.text}
+         />
+       ))}
++      <FinanceMethods {...{ initialProps, locale, params, onSubmitError, onSwitchView }} />
+       <form
+         autoComplete='on'
+         onSubmit={onSubmit}
+@@ -132,21 +134,12 @@ const SignIn = ({
+           )}
+         </section>
+         {(
+-          initialProps.googleClientId ||
+           initialProps.facebookClientId ||
+           initialProps.githubClientId ||
+           initialProps.discordClientId ||
+-          initialProps.appleClientId ||
+           initialProps.oidcProviders?.length > 0
+         ) && (
+           <section className='flex flex-col gap-4 mt-4 items-center'>
+-            <GoogleSignIn
+-              googleClientId={initialProps.googleClientId}
+-              locale={locale}
+-              params={params}
+-              onSubmitError={onSubmitError}
+-              onSwitchView={onSwitchView}
+-            />
+             <FacebookSignIn
+               facebookClientId={initialProps.facebookClientId}
+               locale={locale}
+@@ -168,13 +161,6 @@ const SignIn = ({
+               onSubmitError={onSubmitError}
+               onSwitchView={onSwitchView}
+             />
+-            <AppleSignIn
+-              appleClientId={initialProps.appleClientId}
+-              locale={locale}
+-              params={params}
+-              onSubmitError={onSubmitError}
+-              onSwitchView={onSwitchView}
+-            />
+             <OidcSignIn
+               oidcProviders={initialProps.oidcProviders}
+               locale={locale}
+diff --git a/server/src/pages/blocks/SignUp.tsx b/server/src/pages/blocks/SignUp.tsx
+index 1867eec..8874c17 100644
+--- a/server/src/pages/blocks/SignUp.tsx
++++ b/server/src/pages/blocks/SignUp.tsx
+@@ -1,3 +1,4 @@
++import type { Child } from 'hono/jsx'
+ import {
+   Field, SecondaryButton, PasswordField, PrimaryButton, SubmitError, ViewTitle,
+ } from 'pages/components'
+@@ -10,6 +11,7 @@ import { typeConfig } from 'configs'
+ import { userAttributeModel } from 'models'
+ 
+ export interface SignUpProps {
++  providers?: Child;
+   locale: typeConfig.Locale;
+   onSubmit: (e: Event) => void;
+   onChange: (name: 'email' | 'password' | 'confirmPassword' | 'firstName' | 'lastName' | number, value: string) => void;
+@@ -33,10 +35,12 @@ const SignUp = ({
+   initialProps,
+   isSubmitting,
+   userAttributes,
++  providers,
+ }: SignUpProps) => {
+   return (
+     <>
+       <ViewTitle title={signUp.title[locale]} />
++      {providers}
+       <form
+         autoComplete='on'
+         onSubmit={onSubmit}
+diff --git a/server/src/pages/client.css b/server/src/pages/client.css
+index 69eb29a..329a2d3 100644
+--- a/server/src/pages/client.css
++++ b/server/src/pages/client.css
+@@ -1,4 +1,5 @@
+ @import 'tailwindcss';
++@import './finance.css';
+ 
+ @theme {
+   --color-green: #008000;
+diff --git a/server/src/pages/components/vanilla/AppleSignIn.tsx b/server/src/pages/components/vanilla/AppleSignIn.tsx
+index 1ca68bb..c006104 100644
+--- a/server/src/pages/components/vanilla/AppleSignIn.tsx
++++ b/server/src/pages/components/vanilla/AppleSignIn.tsx
+@@ -25,6 +25,7 @@ const AppleSignIn = ({
+   onSubmitError,
+ }: AppleSignInProps) => {
+   const [scriptLoaded, setScriptLoaded] = useState(false)
++  const [failed, setFailed] = useState(false)
+ 
+   const { socialSignInState } = useSocialSignIn({
+     params,
+@@ -58,15 +59,21 @@ const AppleSignIn = ({
+         type='text/javascript'
+         src='https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js'
+         onLoad={() => setScriptLoaded(true)}
++        onError={() => setFailed(true)}
+       />
+-      <div
++      {failed && <p role='status'>{{
++        en: 'Apple could not load. Refresh or choose another method.',
++        fr: 'Apple est indisponible. Actualisez la page ou choisissez une autre méthode.',
++        zh: 'Apple 加载失败。请刷新或选择其他方式。',
++      }[locale]}</p>}
++      <div hidden={failed}
+         id='apple-login-btn'
+         className='w-[260px] h-[40px]'>
+         <div
+           id='appleid-signin'
+           data-color='black'
+           data-border='true'
+-          data-type='sign in'
++          data-type='continue'
+         />
+       </div>
+     </>
+diff --git a/server/src/pages/components/vanilla/EmailField.tsx b/server/src/pages/components/vanilla/EmailField.tsx
+index 296fa91..3dd4142 100644
+--- a/server/src/pages/components/vanilla/EmailField.tsx
++++ b/server/src/pages/components/vanilla/EmailField.tsx
+@@ -71,6 +71,8 @@ const EmailField = ({
+       />
+       <div className='flex items-center'>
+         <FieldInput
++          required={required}
++          error={error}
+           className='pr-[26px]'
+           type={type}
+           name={name}
+@@ -81,7 +83,7 @@ const EmailField = ({
+         />
+         {onUnlock && locked && <EditIconButton onClick={onUnlock} />}
+       </div>
+-      <FieldError error={error} />
++      <FieldError id={`error-${name}`} error={error} />
+     </section>
+   )
+ }
+diff --git a/server/src/pages/components/vanilla/Field.tsx b/server/src/pages/components/vanilla/Field.tsx
+index c93b4da..6bac9a9 100644
+--- a/server/src/pages/components/vanilla/Field.tsx
++++ b/server/src/pages/components/vanilla/Field.tsx
+@@ -38,6 +38,8 @@ const Field = ({
+         fieldName={name}
+       />
+       <FieldInput
++          required={required}
++          error={error}
+         className='bg-white border border-[lightGray] rounded-lg p-3 w-(--text-width)'
+         type={type}
+         name={name}
+@@ -47,7 +49,7 @@ const Field = ({
+         onChange={onChange}
+       />
+       {note && <p className='text-sm text-gray-500'>* {note}</p>}
+-      <FieldError error={error} />
++      <FieldError id={`error-${name}`} error={error} />
+     </section>
+   )
+ }
+diff --git a/server/src/pages/components/vanilla/FieldError.tsx b/server/src/pages/components/vanilla/FieldError.tsx
+index 896bf2d..3895d2d 100644
+--- a/server/src/pages/components/vanilla/FieldError.tsx
++++ b/server/src/pages/components/vanilla/FieldError.tsx
+@@ -1,14 +1,15 @@
+ export interface FieldErrorProps {
++  id?: string;
+   error?: string;
+ }
+ 
+-const FieldError = ({ error }: FieldErrorProps) => {
++const FieldError = ({ id, error }: FieldErrorProps) => {
+   if (!error) {
+     return null
+   }
+ 
+   return (
+-    <p
++    <p id={id} role='alert'
+       className='text-criticalIndicatorColor text-sm w-(--text-width)'
+     >
+       {error}
+diff --git a/server/src/pages/components/vanilla/FieldInput.tsx b/server/src/pages/components/vanilla/FieldInput.tsx
+index 3d3efd9..e935036 100644
+--- a/server/src/pages/components/vanilla/FieldInput.tsx
++++ b/server/src/pages/components/vanilla/FieldInput.tsx
+@@ -1,6 +1,8 @@
+ import { CSSProperties } from 'hono/jsx'
+ 
+ export interface FieldInputProps {
++  required?: boolean;
++  error?: string;
+   className?: string;
+   style?: CSSProperties;
+   type: 'email' | 'text' | 'password';
+@@ -13,6 +15,8 @@ export interface FieldInputProps {
+ 
+ const FieldInput = ({
+   className,
++  required,
++  error,
+   style,
+   type,
+   name,
+@@ -33,6 +37,9 @@ const FieldInput = ({
+       type={type}
+       style={style}
+       id={`form-${name}`}
++      aria-required={required}
++      aria-invalid={Boolean(error)}
++      aria-describedby={error ? `error-${name}` : undefined}
+       name={name}
+       autoComplete={autoComplete}
+       value={value}
+diff --git a/server/src/pages/components/vanilla/GoogleSignIn.tsx b/server/src/pages/components/vanilla/GoogleSignIn.tsx
+index c72a0d5..4acacac 100644
+--- a/server/src/pages/components/vanilla/GoogleSignIn.tsx
++++ b/server/src/pages/components/vanilla/GoogleSignIn.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect } from 'hono/jsx'
++import { useEffect, useRef, useState } from 'hono/jsx'
+ import {
+   useSocialSignIn, View,
+ } from 'pages/hooks'
+@@ -13,6 +13,31 @@ export interface GoogleSignInProps {
+   onSwitchView: (view: View) => void;
+ }
+ 
++type Credential = { credential?: string }
++type GoogleIdentity = {
++  initialize: (config: {client_id: string; callback: (response: Credential) => void}) => void
++  renderButton: (container: HTMLElement, options: Record<string, string | number>) => void
++}
++const sdk = () => (window as Window & {google?: {accounts?: {id?: GoogleIdentity}}}).google?.accounts?.id
++let loading: Promise<GoogleIdentity> | undefined
++let initializedClient = ''
++let receiveCredential: ((response: Credential) => void) | undefined
++
++function loadGoogle(): Promise<GoogleIdentity> {
++  const existing = sdk()
++  if (existing) return Promise.resolve(existing)
++  if (!loading) loading = new Promise<GoogleIdentity>((resolve, reject) => {
++    const script = document.createElement('script')
++    script.src = 'https://accounts.google.com/gsi/client'
++    script.async = true
++    const fail = () => { script.remove(); loading = undefined; reject(new Error('Google SDK unavailable')) }
++    script.onload = () => { const api = sdk(); if (api) resolve(api); else fail() }
++    script.onerror = fail
++    document.head.appendChild(script)
++  })
++  return loading
++}
++
+ const GoogleSignIn = ({
+   googleClientId,
+   locale,
+@@ -27,50 +52,49 @@ const GoogleSignIn = ({
+     onSwitchView,
+   })
+ 
+-  useEffect(
+-    () => {
+-      if (googleClientId) {
+-        (window as any).handleGoogleSignIn = handleGoogleSignIn
+-        return () => {
+-          (window as any).handleGoogleSignIn = undefined
+-        }
+-      }
+-    },
+-    [googleClientId, handleGoogleSignIn],
+-  )
++  const container = useRef<HTMLDivElement | null>(null)
++  const current = useRef(handleGoogleSignIn)
++  current.current = handleGoogleSignIn
++  const [failed, setFailed] = useState(false)
+ 
+-  if (!googleClientId) {
+-    return null
+-  }
++  useEffect(() => {
++    const target = container.current
++    if (!googleClientId || !target) return
++    let mounted = true
++    let observer: ResizeObserver | undefined
++    loadGoogle().then(api => {
++      if (!mounted) return
++      receiveCredential = response => current.current(response)
++      if (initializedClient !== googleClientId) {
++        api.initialize({client_id: googleClientId, callback: response => receiveCredential?.(response)})
++        initializedClient = googleClientId
++      }
++      let previous = 0
++      const draw = () => {
++        const width = Math.min(400, target.clientWidth)
++        if (!width || width === previous) return
++        previous = width
++        target.replaceChildren()
++        api.renderButton(target, {type: 'standard', size: 'large', theme: 'outline', text: 'continue_with', locale, width})
++      }
++      draw()
++      if (typeof ResizeObserver !== 'undefined') {
++        observer = new ResizeObserver(draw)
++        observer.observe(target)
++      }
++    }).catch(() => { if (mounted) setFailed(true) })
++    return () => { mounted = false; observer?.disconnect(); receiveCredential = undefined }
++  }, [googleClientId, locale])
+ 
+-  return (
+-    <>
+-      <script
+-        src='https://accounts.google.com/gsi/client'
+-        async
+-      >
+-      </script>
+-      <div
+-        id='g_id_onload'
+-        data-client_id={googleClientId}
+-        data-auto_prompt='false'
+-        data-callback='handleGoogleSignIn'
+-      />
+-      <div className='flex flex-row justify-center'>
+-        <div
+-          className='g_id_signin'
+-          data-type='standard'
+-          data-size='large'
+-          data-width='260'
+-          data-theme='outline'
+-          data-text='sign_in_with'
+-          data-locale={locale}
+-          data-shape='rectangular'
+-          data-logo_alignment='left'
+-        />
+-      </div>
+-    </>
+-  )
++  if (!googleClientId) return null
++  return <>
++    <div id='finance-google' ref={container} />
++    {failed && <p role='status'>{{
++      en: 'Google could not load. Refresh or choose another method.',
++      fr: 'Google est indisponible. Actualisez la page ou choisissez une autre méthode.',
++      zh: 'Google 加载失败。请刷新或选择其他方式。',
++    }[locale]}</p>}
++  </>
+ }
+ 
+ export default GoogleSignIn
+diff --git a/server/src/pages/components/vanilla/PasswordField.tsx b/server/src/pages/components/vanilla/PasswordField.tsx
+index 5ecf80c..9c67107 100644
+--- a/server/src/pages/components/vanilla/PasswordField.tsx
++++ b/server/src/pages/components/vanilla/PasswordField.tsx
+@@ -96,6 +96,8 @@ const PasswordField = ({
+       />
+       <div className='flex items-center'>
+         <FieldInput
++          required={required}
++          error={error}
+           type={showPassword ? 'text' : 'password'}
+           className='pr-[26px]'
+           name={name}
+@@ -107,7 +109,7 @@ const PasswordField = ({
+         {showPassword && <EyeIconButton onClick={() => setShowPassword(false)} />}
+         {!showPassword && <EyeSlashIconButton onClick={() => setShowPassword(true)} />}
+       </div>
+-      <FieldError error={error} />
++      <FieldError id={`error-${name}`} error={error} />
+     </section>
+   )
+ }
+diff --git a/server/src/pages/components/vanilla/SubmitError.tsx b/server/src/pages/components/vanilla/SubmitError.tsx
+index dd639bb..6e7d730 100644
+--- a/server/src/pages/components/vanilla/SubmitError.tsx
++++ b/server/src/pages/components/vanilla/SubmitError.tsx
+@@ -6,7 +6,7 @@ const SubmitError = ({ error }: {
+   }
+ 
+   return (
+-    <p
++    <p role='alert'
+       className='break-words mt-4 bg-criticalIndicatorColor text-white rounded-md py-2 px-4 w-(--text-width) self-center box-border'
+     >
+       {error}
+diff --git a/server/src/pages/tools/locale.ts b/server/src/pages/tools/locale.ts
+index a76bcdd..a736781 100644
+--- a/server/src/pages/tools/locale.ts
++++ b/server/src/pages/tools/locale.ts
+@@ -500,8 +500,8 @@ export const resetPassword = Object.freeze({
+ 
+ export const signIn = Object.freeze({
+   title: {
+-    en: 'Authentication',
+-    fr: 'Authentification',
++    en: 'Sign in',
++    fr: 'Se connecter',
+     zh: '身份认证',
+   },
+   email: {
+@@ -515,8 +515,8 @@ export const signIn = Object.freeze({
+     zh: '密码',
+   },
+   submit: {
+-    en: 'Login',
+-    fr: 'Se connecter',
++    en: 'Sign in with email',
++    fr: 'Se connecter par e-mail',
+     zh: '登录',
+   },
+   signUp: {
+@@ -555,7 +555,7 @@ export const signIn = Object.freeze({
+     zh: '继续',
+   },
+   withPasskey: {
+-    en: 'Log in with Passkey',
++    en: 'Use a passkey',
+     fr: 'Se connecter avec Passkey',
+     zh: '使用 Passkey 登录',
+   },
+@@ -598,8 +598,8 @@ export const signUp = Object.freeze({
+     zh: '姓',
+   },
+   signUp: {
+-    en: 'Confirm',
+-    fr: 'Confirmer',
++    en: 'Create account',
++    fr: 'Créer un compte',
+     zh: '确认',
+   },
+   signIn: {
+diff --git a/server/src/pages/views/SignUp.tsx b/server/src/pages/views/SignUp.tsx
+index 1d4ef43..4a29742 100644
+--- a/server/src/pages/views/SignUp.tsx
++++ b/server/src/pages/views/SignUp.tsx
+@@ -1,3 +1,4 @@
++import FinanceMethods from 'pages/blocks/FinanceMethods'
+ import { useEffect } from 'hono/jsx'
+ import { typeConfig } from 'configs'
+ import {
+@@ -44,6 +45,7 @@ const SignUp = ({
+ 
+   return (
+     <SignUpBlock
++      providers={<FinanceMethods signUp {...{ initialProps, locale, params, onSubmitError: handleSubmitError, onSwitchView }} />}
+       locale={locale}
+       onSubmit={handleSubmit}
+       onChange={handleChange}

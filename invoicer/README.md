@@ -2,7 +2,7 @@
 
 A small, open-source invoice workspace for one business, hosted entirely on your own Cloudflare account. Create branded invoices in the dashboard or generate PDFs on demand through a REST API.
 
-**One Worker + D1. One admin key. No customer accounts.** AGPL-3.0-only licensed; bundled fonts have their own OFL license.
+**Multiple businesses, editable invoices, and business-scoped API keys on Cloudflare Workers + D1.** AGPL-3.0-only licensed; bundled fonts have their own OFL license.
 
 ## What it does
 
@@ -70,20 +70,20 @@ The repository contains configuration and migrations but does not deploy automat
 
 ## REST API
 
-Read the interactive-facing reference at `/api/v1/docs` or download `/api/v1/openapi.json`. Every data endpoint requires `Authorization: Bearer YOUR_ADMIN_KEY`. The dashboard uses the same operations through a protected session.
+Read the interactive-facing reference at `/api/v1/docs` or download `/api/v1/openapi.json`. Data endpoints accept `Authorization: Bearer YOUR_API_KEY`. Create a business-scoped key from **API & MCP** in the dashboard. The self-hosted admin key remains supported for owner operations. The dashboard uses the same operations through a protected session.
 
 Configure these environment variables locally, without committing them or putting the key directly into command text:
 
 ```sh
 # INVOICER_URL: your deployed app's origin
-# INVOICER_ADMIN_KEY: your admin secret
+# INVOICER_API_KEY: a read-and-write business API key
 ```
 
 Generate a PDF **without writing an invoice or allocating a number**:
 
 ```sh
 curl "$INVOICER_URL/api/v1/render" \
-  -H "Authorization: Bearer $INVOICER_ADMIN_KEY" \
+  -H "Authorization: Bearer $INVOICER_API_KEY" \
   -H 'Content-Type: application/json' \
   --data @docs/example-invoice.json \
   --output invoice.pdf
@@ -93,7 +93,7 @@ Save and immediately issue an invoice:
 
 ```sh
 curl "$INVOICER_URL/api/v1/invoices" \
-  -H "Authorization: Bearer $INVOICER_ADMIN_KEY" \
+  -H "Authorization: Bearer $INVOICER_API_KEY" \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: order-1042-invoice' \
   --data @docs/example-invoice.json
@@ -150,7 +150,7 @@ JSON bodies are capped at 1 MiB, line items at 200, custom fields at 20. Large v
 - The Worker fails closed if `ADMIN_KEY` is missing or shorter than 32 characters.
 - Dashboard sessions last 12 hours, use HttpOnly/SameSite cookies and Secure on HTTPS, and store only token hashes in D1. Mutations require a matching Origin and CSRF token.
 - Admin keys are checked with constant-time digest comparison. Failed logins are throttled per hashed IP: eight attempts in ten minutes.
-- Rotating `ADMIN_KEY` via `npx wrangler secret put ADMIN_KEY` invalidates existing sessions on their next request. API clients must use the new key.
+- Rotating `ADMIN_KEY` via `npx wrangler secret put ADMIN_KEY` invalidates existing sessions on their next request. Clients using the owner key must use the new key; revoke business API keys separately in API & MCP.
 - Customer URLs are bearer capabilities: anyone holding a link can read that invoice. Only a token hash is stored. Revocation also blocks PDF downloads. Restoring an archived invoice does not revive old links.
 - Customer and API responses use `no-store`, `noindex` and `no-referrer`. No third-party page assets, analytics or rendering requests are used. The bundled PDF viewer does not execute PDF JavaScript.
 - Worker error logs omit request bodies and identifiers. Cloudflare's request metadata may include share URL paths; restrict access to platform logs and database exports.
@@ -190,3 +190,7 @@ The integration suite provisions a fresh temporary local database and Worker, te
 Application source: [AGPL-3.0-only](LICENSE). [Minvoice](https://github.com/ddyy/minvoice) inspired the single-business Workers/D1 approach; [worker-generate-invoice-pdf](https://github.com/adamschwartz/worker-generate-invoice-pdf) inspired on-demand generation. This implementation does not copy Invoice Generator's source, branding or assets, and does not include Minvoice payment or email code.
 
 Bundled Noto font files: [SIL Open Font License](public/fonts/OFL.txt), sourced from the [Noto upstream repository](https://github.com/notofonts/noto-fonts). See [dependency notices](THIRD_PARTY_NOTICES.md). Maintainers can refresh the bundled fonts with `npm run fonts`; users do not need network access to a font provider at runtime.
+
+## Multiple businesses and MCP
+
+Create and switch businesses from the sidebar. Each business has independent customers, branding, settings, invoice numbering, and API keys. See [MCP and deployment notes](docs/mcp.md) for the new migration, scoped credentials, and dedicated hosted domains.

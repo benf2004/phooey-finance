@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type AppEnv, encrypt, decrypt, rateLimit } from "./auth";
 import { assert, id, now, AppError } from "./util";
 import { Ledger, ruleMatches } from "./ledger";
+import { dateSchema } from "../shared/models";
 import { parseMoney } from "../shared/money";
 const hosts = new Set(["bridge.simplefin.org", "beta-bridge.simplefin.org"]);
 export function validateSimplefinURL(value: string) {
@@ -86,7 +87,7 @@ export async function connectSimplefin(env: AppEnv, token: string) {
       "UPDATE jobs SET status='cancelled' WHERE kind='sync' AND status IN ('queued','running')",
     ),
     env.DB.prepare(
-      "INSERT INTO connections(id,secret,generation,status) VALUES('simplefin',?,?,'selecting') ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,generation=excluded.generation,status='selecting',last_error=NULL,last_success=NULL,resume_from=NULL,selected_accounts='[]',available_accounts='[]',selection_ready=0",
+      "INSERT INTO connections(id,secret,generation,status) VALUES('simplefin',?,?,'selecting') ON CONFLICT(id) DO UPDATE SET secret=excluded.secret,generation=excluded.generation,status='selecting',last_error=NULL,last_success=NULL,resume_from=NULL,initial_sync_start=NULL,selected_accounts='[]',available_accounts='[]',selection_ready=0",
     ).bind(await encrypt(env, access), id()),
     env.DB.prepare("UPDATE accounts SET archived=1 WHERE source='simplefin'"),
   ]);
@@ -94,11 +95,12 @@ export async function connectSimplefin(env: AppEnv, token: string) {
 }
 export async function requestSync(env: AppEnv, start?: string) {
   const connection = await env.DB.prepare(
-    "SELECT id,last_success,resume_from,generation,selected_accounts,selection_ready FROM connections WHERE id='simplefin'",
+    "SELECT id,last_success,resume_from,initial_sync_start,generation,selected_accounts,selection_ready FROM connections WHERE id='simplefin'",
   ).first<{
     id: string;
     last_success: string | null;
     resume_from: number | null;
+    initial_sync_start: string | null;
     generation: string;
     selected_accounts: string;
     selection_ready: number;
@@ -117,7 +119,15 @@ export async function requestSync(env: AppEnv, start?: string) {
     await env.JOBS.send({ jobId: active.id });
     return { jobId: active.id };
   }
-  await rateLimit(env.DB, "manual-sync", 4, 3600);
+  if (start !== undefined) dateSchema.parse(start);
+  assert(
+    start ||
+      connection.initial_sync_start ||
+      connection.last_success ||
+      connection.resume_from,
+    400,
+    "Choose a date to sync transactions from before your first sync",
+  );
   const end = Math.floor(Date.now() / 1000) + 1;
   const startDate = start
     ? Math.floor(new Date(start + "T00:00:00Z").getTime() / 1000)
@@ -125,12 +135,13 @@ export async function requestSync(env: AppEnv, start?: string) {
       (connection.last_success
         ? Math.floor(new Date(connection.last_success).getTime() / 1000) -
           5 * 86400
-        : end - 45 * 86400));
+        : Math.floor(Date.parse(connection.initial_sync_start!) / 1000)));
   assert(
     startDate < end && startDate >= 0,
     400,
     "Backfill date must be in the past",
   );
+  await rateLimit(env.DB, "manual-sync", 4, 3600);
   const jobId = id();
   const guard = id();
   await env.DB.batch([
@@ -141,10 +152,15 @@ export async function requestSync(env: AppEnv, start?: string) {
       jobId,
       JSON.stringify({
         cursor: startDate,
+        initialCursor: startDate,
+        processedRecords: 0,
         end,
         generation: connection.generation,
       }),
     ),
+    env.DB.prepare(
+      "UPDATE connections SET initial_sync_start=COALESCE(initial_sync_start,?) WHERE id='simplefin'",
+    ).bind(new Date(startDate * 1000).toISOString().slice(0, 10)),
     env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
   ]);
   await env.JOBS.send({ jobId });
@@ -250,11 +266,12 @@ async function fetchSimplefinAccounts(
 }
 export async function simplefinState(env: AppEnv) {
   const connection = await env.DB.prepare(
-    "SELECT id,last_success,last_error,status,generation,selected_accounts,available_accounts,selection_ready FROM connections WHERE id='simplefin'",
+    "SELECT id,last_success,last_error,status,initial_sync_start,generation,selected_accounts,available_accounts,selection_ready FROM connections WHERE id='simplefin'",
   ).first<{
     id: string;
     last_success: string | null;
     last_error: string | null;
+    initial_sync_start: string | null;
     status: string;
     generation: string;
     selected_accounts: string;
@@ -402,6 +419,8 @@ type SyncPayload = {
   offset?: number;
   problems?: string[];
   initialCursor?: number;
+  windowRecords?: number;
+  processedRecords?: number;
 };
 export async function syncWindow(
   env: AppEnv,
@@ -450,11 +469,15 @@ export async function syncWindow(
       ...payload,
       stageKey,
       offset: 0,
+      windowRecords: data.accounts.reduce(
+        (sum, account) => sum + (account.transactions?.length ?? 0),
+        0,
+      ),
       problems,
       initialCursor: payload.initialCursor ?? payload.cursor,
     };
     const staged = await env.DB.prepare(
-      "UPDATE jobs SET payload=?,status='queued',lease_until=0,progress='Bank data received; importing',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='running' AND EXISTS(SELECT 1 FROM connections WHERE id='simplefin' AND generation=?)",
+      "UPDATE jobs SET payload=?,status='queued',lease_until=0,error=NULL,progress='Bank data received; importing',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='running' AND EXISTS(SELECT 1 FROM connections WHERE id='simplefin' AND generation=?)",
     )
       .bind(JSON.stringify(next), jobId, payload.generation)
       .run();
@@ -565,6 +588,7 @@ export async function syncWindow(
         cursor: windowEnd,
         end: payload.end,
         initialCursor: payload.initialCursor,
+        processedRecords: (payload.processedRecords ?? 0) + records.length,
         problems: payload.problems,
       }
     : { ...payload, offset: end };
@@ -587,8 +611,11 @@ export async function syncWindow(
   if (finished)
     statements.push(
       env.DB.prepare(
-        "UPDATE connections SET last_success=CASE WHEN ?=0 THEN ? ELSE last_success END,resume_from=CASE WHEN ?=0 THEN NULL ELSE MIN(COALESCE(resume_from,?),?) END,last_error=?,status=? WHERE id='simplefin'",
+        "UPDATE connections SET initial_sync_start=COALESCE(initial_sync_start,?),last_success=CASE WHEN ?=0 THEN ? ELSE last_success END,resume_from=CASE WHEN ?=0 THEN NULL ELSE MIN(COALESCE(resume_from,?),?) END,last_error=?,status=? WHERE id='simplefin'",
       ).bind(
+        new Date((payload.initialCursor ?? payload.cursor) * 1000)
+          .toISOString()
+          .slice(0, 10),
         problems.length,
         new Date(payload.end * 1000).toISOString(),
         problems.length,
@@ -619,4 +646,36 @@ export async function claimJob(env: AppEnv, jobId: string) {
   )
     .bind(now() + 180, jobId, now())
     .first<{ id: string; kind: string; payload: string }>();
+}
+
+// Derive display progress from committed checkpoints, never from elapsed time.
+export function syncJobProgress(payload: SyncPayload, status: string) {
+  const start = payload.initialCursor ?? payload.cursor;
+  const windowSize = 45 * 86400;
+  const totalWindows = Math.max(
+    1,
+    Math.ceil((payload.end - start) / windowSize),
+  );
+  const complete = status === "complete";
+  const completedWindows = complete
+    ? totalWindows
+    : Math.floor((payload.cursor - start) / windowSize);
+  const windowFraction = payload.windowRecords
+    ? (payload.offset ?? 0) / payload.windowRecords
+    : 0;
+  return {
+    from: new Date(start * 1000).toISOString().slice(0, 10),
+    to: new Date(payload.end * 1000).toISOString().slice(0, 10),
+    totalWindows,
+    completedWindows,
+    recordsProcessed: (payload.processedRecords ?? 0) + (payload.offset ?? 0),
+    percent: complete
+      ? 100
+      : Math.min(
+          99,
+          Math.floor(
+            ((completedWindows + windowFraction) / totalWindows) * 100,
+          ),
+        ),
+  };
 }

@@ -20,6 +20,7 @@ import {
   readCookie,
   redirect,
   startIdentity,
+  signInDestination,
   type HostedEnv,
 } from "./control";
 import { escape, page } from "./html";
@@ -34,7 +35,12 @@ type KeyRow = {
   public_key: string;
   label: string;
 };
-type Pending = { customer: string; version: number; primaryKey: boolean };
+type Pending = {
+  customer: string;
+  version: number;
+  primaryKey: boolean;
+  destination?: string;
+};
 const script =
   '<p role="status" id="auth-status"></p><script defer src="/finance-security.js"></script>';
 const json = (value: unknown) =>
@@ -42,7 +48,9 @@ const json = (value: unknown) =>
 const button = (action: string, label: string, value = "") =>
   `<button type="button" data-action="${action}" data-value="${escape(value)}">${escape(label)}</button>`;
 const codeInput =
-  '<label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"></label>';
+  '<label for="auth-code">Authenticator code<input id="auth-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="000000"></label>';
+const codeForm = (action: string, label: string) =>
+  `<form data-security-action="${action}">${codeInput}<button type="submit">${label}</button></form>`;
 
 async function pendingLogin(env: HostedEnv, req: Request): Promise<Pending> {
   const row = await env.CONTROL.prepare(
@@ -103,10 +111,12 @@ export async function securityRoute(req: Request, env: HostedEnv) {
     const keys = await getKeys(env, pending.customer);
     return page(
       "Verify your sign-in",
-      (otp ? codeInput + button("verify-code", "Verify code") : "") +
+      '<p class="page-lead">One more step to keep your account safe.</p>' +
+        (otp ? codeForm("verify-code", "Verify and continue") : "") +
         (keys.some((k) => k.role === "second") && !pending.primaryKey
           ? button("second", "Use security key or passkey")
           : "") +
+        '<p class="page-footnote"><a href="/cloud/start">Start sign-in again</a></p>' +
         script,
     );
   }
@@ -232,13 +242,31 @@ export async function securityRoute(req: Request, env: HostedEnv) {
         "Restart key verification.",
       );
       owner = key.customer;
-      if (primary)
+      if (primary) {
+        // Passkeys started on the authorization page preserve the same server-held destination.
+        const login = await env.CONTROL.prepare(
+          "SELECT payload FROM challenges WHERE digest=? AND audience='melody' AND expires>?",
+        )
+          .bind(await hash(readCookie(req, "login")), now())
+          .first<{ payload: string }>();
+        const destination = login
+          ? signInDestination(JSON.parse(login.payload).destination)
+          : undefined;
         return browserResult(
-          await afterPrimary(env, owner, true, key.security_version),
+          await afterPrimary(
+            env,
+            owner,
+            true,
+            key.security_version,
+            destination,
+          ),
         );
+      }
     }
     await consume(env, "second", readCookie(req, "pending"));
-    return browserResult(await finishSession(env, owner!, pending!.version));
+    return browserResult(
+      await finishSession(env, owner!, pending!.version, pending!.destination),
+    );
   }
 
   const c = await customer(env, req);
@@ -256,49 +284,71 @@ export async function securityRoute(req: Request, env: HostedEnv) {
   )
     .bind(session, now() + 86400 - 600)
     .first();
-  if (!isPost && path === "") {
-    const items = keys
-      .map(
-        (k) =>
-          `<li>${escape(k.label)} · ${k.role === "primary" ? "Primary sign-in" : "Two-factor authentication"} ${button("remove-key", "Remove", k.id)}</li>`,
-      )
-      .join("");
-    const enrollKey =
-      '<label>Key name<input name="key-label" maxlength="60" placeholder="My security key"></label>' +
-      (!keys.some((k) => k.role === "second")
-        ? button("register", "Add a primary passkey", "primary")
-        : "") +
-      (!keys.some((k) => k.role === "primary")
-        ? button("register", "Add a two-factor security key", "second")
-        : "");
+  if (!isPost && path === "/setup") {
+    if (otp || keys.some((key) => key.role === "second"))
+      return redirect("/cloud/account");
     return page(
-      "Sign-in and security",
-      "<p>" +
-        escape(c.email) +
-        "</p>" +
-        (!fresh
-          ? '<p>Sign in again to change your methods.</p><a href="/cloud/security/reauth">Email, Google or Apple</a> · <a href="/cloud/security/passkey">Passkey</a>'
-          : "") +
-        (fresh
-          ? "<p>Changing a key or authenticator signs you out of your sessions.</p><fieldset>"
-          : "<fieldset disabled>") +
-        "<h2>Passkeys and security keys</h2><p>Choose one role for your keys. Remove your enrolled keys before switching roles.</p><ul>" +
-        items +
-        "</ul>" +
-        enrollKey +
-        "<h2>Authenticator app</h2>" +
-        (otp
-          ? button("remove-code", "Remove authenticator")
-          : button("setup-code", "Set up authenticator") +
-            '<section id="setup" hidden><p>In your authenticator, add a time-based account for phooey! finance using this setup key.</p><code id="setup-secret"></code>' +
-            codeInput +
-            button("confirm-code", "Confirm authenticator") +
-            "</section>") +
-        '<h2>Additional sign-in method</h2><form method="post" action="/cloud/security/link"><button>Link email, Google or Apple</button></form></fieldset><p><a href="/cloud/account">Back to account</a></p>' +
-        script,
+      "Add a little extra security",
+      `
+      <ol class="setup-steps" aria-label="Account setup"><li>1. Account created</li><li>2. Email confirmed</li><li aria-current="step">3. Security</li></ol>
+      <p class="page-lead">Your account is ready. Add two-factor authentication for an extra layer of protection.</p>
+      <section class="security-panel"><span class="eyebrow">Optional</span><h2>Authenticator app</h2>
+      <p>Use a time-based code from your authenticator app when you sign in.</p>
+      ${fresh ? button("setup-code", "Set up two-factor authentication") : '<a class="button" href="/cloud/security/reauth?next=/cloud/security/setup">Sign in to set up</a>'}
+      <section id="setup" hidden><p>Add an account in your authenticator using this setup key, then enter its six-digit code.</p><code id="setup-secret"></code>${codeForm("confirm-code", "Enable two-factor authentication")}</section></section>
+      <div class="setup-footer"><a class="button button-secondary" href="/cloud/account">Skip for now</a><p>You can set this up later in Sign-in and security.</p></div>${script}`,
     );
   }
-  if (!isPost && path === "/reauth") return startIdentity(env, req);
+  if (!isPost && path === "") {
+    const disabled = fresh ? "" : " disabled";
+    const items = keys
+      .map(
+        (key) =>
+          `<li><div><strong>${escape(key.label)}</strong><span>${key.role === "primary" ? "Passkey sign-in" : "Two-factor security key"}</span></div>${button("remove-key", "Remove", key.id)}</li>`,
+      )
+      .join("");
+    const setup =
+      '<section id="setup" hidden><p>Add a time-based account in your authenticator app using this setup key, then enter its six-digit code.</p><code id="setup-secret"></code>' +
+      codeForm("confirm-code", "Enable authenticator") +
+      "</section>";
+    return page(
+      "Sign-in and security",
+      `<p class="security-intro">Manage how you sign in and protect your account.</p>
+      <div class="security-account"><span>Signed in as</span><strong>${escape(c.email)}</strong></div>
+      ${
+        fresh
+          ? '<p class="security-session-note">Security changes sign you out on other devices. This browser stays signed in.</p>'
+          : '<section class="security-reauth" aria-labelledby="reauth-title"><div><h2 id="reauth-title">Confirm it’s you to make changes</h2><p>Your settings are locked until you sign in again.</p></div><div class="actions"><a class="button" href="/cloud/security/reauth">Sign in again</a><a href="/cloud/security/passkey">Use a passkey</a></div></section>'
+      }
+      <div class="security-settings">
+        <section class="security-setting" aria-labelledby="passkeys-title">
+          <div class="security-setting-info"><h2 id="passkeys-title">Passkeys &amp; security keys</h2><p>Sign in with your device’s fingerprint, face recognition, or a physical key.</p><span class="access-badge${keys.length ? " access-active" : ""}">${keys.length ? keys.length + (keys.length === 1 ? " key added" : " keys added") : "Not set up"}</span></div>
+          <fieldset class="security-controls"${disabled}><legend class="visually-hidden">Manage passkeys and security keys</legend>
+            ${items ? `<ul class="security-key-list">${items}</ul>` : ""}
+            <label for="key-label">Device name<input id="key-label" name="key-label" maxlength="60" placeholder="e.g. My MacBook" autocomplete="off"></label>
+            <div class="security-buttons">${!keys.some((key) => key.role === "second") ? button("register", "Add passkey", "primary") : ""}${!keys.some((key) => key.role === "primary") ? button("register", "Add two-factor security key", "second") : ""}</div>
+            <p class="security-help">Keys can sign you in or act as a second factor. Remove existing keys before switching between these uses.</p>
+          </fieldset>
+        </section>
+        <section class="security-setting" aria-labelledby="authenticator-title">
+          <div class="security-setting-info"><h2 id="authenticator-title">Authenticator app</h2><p>Add a six-digit code from an app like 1Password or Google Authenticator when you sign in.</p><span class="access-badge${otp ? " access-active" : ""}">${otp ? "Enabled" : "Not enabled"}</span></div>
+          <fieldset class="security-controls"${disabled}><legend class="visually-hidden">Manage authenticator app</legend>${otp ? '<p class="security-control-description">Your account is protected with two-factor authentication.</p>' + button("remove-code", "Remove authenticator") : button("setup-code", "Set up authenticator") + setup}</fieldset>
+        </section>
+        <section class="security-setting" aria-labelledby="linked-title">
+          <div class="security-setting-info"><h2 id="linked-title">Connected sign-in methods</h2><p>Link another email, Google, or Apple login to this same account.</p></div>
+          <fieldset class="security-controls"${disabled}><legend class="visually-hidden">Connect another sign-in method</legend><form method="post" action="/cloud/security/link"><button>Connect a sign-in method</button></form></fieldset>
+        </section>
+      </div>${script}`,
+      200,
+      "security",
+    );
+  }
+  if (!isPost && path === "/reauth") {
+    const url = new URL(req.url);
+    if (!url.searchParams.has("next"))
+      url.searchParams.set("next", "/cloud/security");
+    return startIdentity(env, new Request(url, req));
+  }
   assert(
     isPost && fresh,
     403,
@@ -324,11 +374,18 @@ export async function securityRoute(req: Request, env: HostedEnv) {
     return response;
   }
   if (path === "/confirm-code") {
-    const pending = await consume(
-      env,
-      "totp-enroll",
-      readCookie(req, "ceremony"),
+    await rateLimit(env.CONTROL, "totp-enroll:" + c.id, 10, 300);
+    const enrollment = await env.CONTROL.prepare(
+      "SELECT payload FROM challenges WHERE digest=? AND audience='totp-enroll' AND expires>?",
+    )
+      .bind(await hash(readCookie(req, "ceremony")), now())
+      .first<{ payload: string }>();
+    assert(
+      enrollment,
+      400,
+      "Setup expired. Choose Set up authenticator to get a new key.",
     );
+    const pending = JSON.parse(enrollment.payload);
     assert(
       pending.customer === c.id && pending.session === session,
       403,
@@ -338,7 +395,12 @@ export async function securityRoute(req: Request, env: HostedEnv) {
       await decrypt(env, pending.encrypted),
       z.string().parse(values.code),
     );
-    assert(step !== null, 400, "Code did not match. Start enrollment again.");
+    assert(
+      step !== null,
+      400,
+      "That code did not match. Try the current six-digit code from your authenticator.",
+    );
+    await consume(env, "totp-enroll", readCookie(req, "ceremony"));
     assert(
       await env.CONTROL.prepare(
         "INSERT INTO login_totp SELECT ?,?,? WHERE " +
@@ -424,17 +486,40 @@ export async function securityRoute(req: Request, env: HostedEnv) {
       "Sign in again.",
     );
   } else if (path === "/remove-key") {
-    await env.CONTROL.prepare(
-      "DELETE FROM login_keys WHERE id=? AND customer=? AND " + activeSession,
+    const removed = await env.CONTROL.prepare(
+      "DELETE FROM login_keys WHERE id=? AND customer=? AND " +
+        activeSession +
+        " RETURNING id",
     )
       .bind(z.string().parse(values.id), c.id, ...bindings)
-      .run();
+      .first();
+    assert(
+      removed,
+      404,
+      "This key is no longer enrolled. Refresh your security settings.",
+    );
   } else if (path === "/remove-code") {
-    await env.CONTROL.prepare(
-      "DELETE FROM login_totp WHERE customer=? AND " + activeSession,
+    const removed = await env.CONTROL.prepare(
+      "DELETE FROM login_totp WHERE customer=? AND " +
+        activeSession +
+        " RETURNING customer",
     )
       .bind(c.id, ...bindings)
-      .run();
+      .first();
+    assert(
+      removed,
+      404,
+      "An authenticator is no longer enrolled. Refresh your security settings.",
+    );
   } else return new Response("Not found", { status: 404 });
-  return json({ next: "/cloud/start" });
+  // Security triggers revoke every old session. Keep this freshly authenticated
+  // browser signed in with a new token after its successful security change.
+  return browserResult(
+    await finishSession(
+      env,
+      c.id,
+      c.security_version + 1,
+      values.next === "/cloud/account" ? "/cloud/account" : "/cloud/security",
+    ),
+  );
 }

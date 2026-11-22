@@ -1,0 +1,408 @@
+diff --git a/server/src/services/mfa.ts b/server/src/services/mfa.ts
+--- a/server/src/services/mfa.ts
++++ b/server/src/services/mfa.ts
+@@ -69,9 +69,12 @@
+   c: Context<typeConfig.Context>,
+   authCodeBody: typeConfig.AuthCodeBody | typeConfig.EmbeddedSessionBodyWithUser,
+ ): MfaConfig => {
++  // Email ownership is a first-sign-in requirement, independent of optional 2FA.
++  const verifyEmail = Boolean(env(c).ENABLE_EMAIL_VERIFICATION &&
++    !authCodeBody.user.socialAccountId && !authCodeBody.user.emailVerified)
+   if (authCodeBody.mfa) {
+     return {
+-      requireEmailMfa: authCodeBody.mfa.e,
++      requireEmailMfa: verifyEmail || authCodeBody.mfa.e,
+       requireOtpMfa: authCodeBody.mfa.o,
+       requireSmsMfa: authCodeBody.mfa.s,
+       allowEmailMfaAsBackup: authCodeBody.mfa.b,
+@@ -79,7 +82,8 @@
+     }
+   }
+ 
+-  return getSystemMfaConfig(c)
++  const config = getSystemMfaConfig(c)
++  return { ...config, requireEmailMfa: verifyEmail || config.requireEmailMfa }
+ }
+ 
+ export const allowOtpSwitchToEmailMfa = (
+diff --git a/server/src/handlers/identity/main.ts b/server/src/handlers/identity/main.ts
+--- a/server/src/handlers/identity/main.ts
++++ b/server/src/handlers/identity/main.ts
+@@ -11,7 +11,7 @@
+ } from 'configs'
+ import { identityDto } from 'dtos'
+ import {
+-  appService, consentService, emailService,
++  appService, consentService,
+   identityService, kvService, mfaService, sessionService, userAttributeService, userService,
+ } from 'services'
+ import {
+@@ -139,7 +139,6 @@
+ 
+   const {
+     NAMES_IS_REQUIRED: namesIsRequired,
+-    ENABLE_EMAIL_VERIFICATION: enableEmailVerification,
+   } = env(c)
+ 
+   const reqBody = await c.req.json()
+@@ -175,21 +174,8 @@
+     attributeValues,
+   )
+ 
+-  if (enableEmailVerification) {
+-    const verificationCode = await emailService.sendEmailVerification(
+-      c,
+-      bodyDto.email,
+-      user,
+-      bodyDto.locale,
+-    )
+-    if (verificationCode) {
+-      await kvService.storeEmailVerificationCode(
+-        c.env.KV,
+-        user.id,
+-        verificationCode,
+-      )
+-    }
+-  }
++  // The in-flow email challenge sends one code after the account is created.
++  // A separate verification email would send a second, incompatible code.
+ 
+   const { AUTHORIZATION_CODE_EXPIRES_IN: codeExpiresIn } = env(c)
+   const mfaConfig = mfaService.getAppMfaConfig(app)
+diff --git a/server/src/handlers/identity/mfa.ts b/server/src/handlers/identity/mfa.ts
+--- a/server/src/handlers/identity/mfa.ts
++++ b/server/src/handlers/identity/mfa.ts
+@@ -145,6 +145,15 @@
+     bodyDto.mfaCode,
+   )
+ 
++  // Only a successful, rate-limited email challenge can verify ownership.
++  if (!authCodeStore.user.emailVerified) {
++    await userModel.update(c.env.DB, authCodeStore.user.id, { emailVerified: 1 })
++    authCodeStore.user.emailVerified = true
++    await kvService.storeAuthCode(
++      c.env.KV, bodyDto.code, authCodeStore, env(c).AUTHORIZATION_CODE_EXPIRES_IN,
++    )
++  }
++
+   await mfaService.rememberEmailMfaDevice(
+     c,
+     bodyDto.rememberDevice,
+diff --git a/server/src/pages/blocks/SignUp.tsx b/server/src/pages/blocks/SignUp.tsx
+--- a/server/src/pages/blocks/SignUp.tsx
++++ b/server/src/pages/blocks/SignUp.tsx
+@@ -40,6 +40,10 @@
+   return (
+     <>
+       <ViewTitle title={signUp.title[locale]} />
++      <ol className='finance-steps' aria-label='Account setup'>
++        <li aria-current='step'>1. Account</li><li>2. Confirm email</li><li>3. Security</li>
++      </ol>
++      <p className='finance-intro'>{{en: 'A little less admin. A little more clarity.', fr: 'Moins de gestion. Plus de clarté.', zh: '减少管理，让财务更清晰。'}[locale]}</p>
+       {providers}
+       <form
+         autoComplete='on'
+@@ -71,18 +75,11 @@
+               value,
+             )}
+           />
+-          <PasswordField
+-            label={signUp.confirmPassword[locale]}
+-            required
+-            name='confirmPassword'
+-            value={values.confirmPassword}
+-            error={errors.confirmPassword}
+-            autoComplete='new-password'
+-            onChange={(value) => onChange(
+-              'confirmPassword',
+-              value,
+-            )}
+-          />
++          <p className='finance-hint'>{{
++            en: 'Use 8 or more characters, including uppercase and lowercase letters, a number, and a symbol.',
++            fr: 'Utilisez au moins 8 caractères, avec majuscules, minuscules, chiffre et symbole.',
++            zh: '使用至少 8 个字符，包含大小写字母、数字和符号。',
++          }[locale]}</p>
+           {initialProps.enableNames && (
+             <>
+               <Field
+diff --git a/server/src/pages/hooks/useSignUpForm.tsx b/server/src/pages/hooks/useSignUpForm.tsx
+--- a/server/src/pages/hooks/useSignUpForm.tsx
++++ b/server/src/pages/hooks/useSignUpForm.tsx
+@@ -10,7 +10,6 @@
+ } from 'configs'
+ import {
+   validate, emailField, passwordField,
+-  confirmPasswordField,
+   requiredField,
+ } from 'pages/tools/form'
+ import {
+@@ -104,7 +103,6 @@
+       const definition = {
+         email: emailField(locale),
+         password: passwordField(locale),
+-        confirmPassword: confirmPasswordField(locale),
+         firstName: initialProps.namesIsRequired
+           ? string().required(validateError.firstNameIsEmpty[locale])
+           : string(),
+@@ -138,7 +136,7 @@
+     onSubmitError(null)
+     switch (name) {
+     case 'email':
+-      setEmail(value as string)
++      setEmail((value as string).trim())
+       break
+     case 'password':
+       setPassword(value as string)
+diff --git a/server/src/pages/blocks/EmailMfa.tsx b/server/src/pages/blocks/EmailMfa.tsx
+--- a/server/src/pages/blocks/EmailMfa.tsx
++++ b/server/src/pages/blocks/EmailMfa.tsx
+@@ -36,22 +36,14 @@
+   return (
+     <>
+       <ViewTitle
+-        title={emailMfa.title[locale]}
++        title={{en: 'Confirm your email', fr: 'Confirmez votre e-mail', zh: '确认您的邮箱'}[locale]}
+       />
++      <p className='finance-intro'>{{en: 'Check your inbox and spam folder, then enter the six-digit code below.', fr: 'Vérifiez votre boîte de réception et vos spams, puis saisissez le code à six chiffres.', zh: '查看收件箱和垃圾邮件文件夹，然后输入六位验证码。'}[locale]}</p>
+       <form
+         autoComplete='on'
+         onSubmit={onSubmit}
+       >
+         <section className='flex flex-col gap-4 justify-center'>
+-          <SecondaryButton
+-            title={resent
+-              ? emailMfa.resent[locale]
+-              : emailMfa.resend[locale]
+-            }
+-            disabled={resent}
+-            isLoading={isSending}
+-            onClick={() => sendEmailMfa(true)}
+-          />
+           <CodeInput
+             label={emailMfa.code[locale]}
+             required
+@@ -79,8 +71,16 @@
+             type='submit'
+             isLoading={isSubmitting}
+           />
++          {resent && <p role="status" className="finance-hint">{emailMfa.resent[locale]}</p>}
++          <SecondaryButton
++            title={emailMfa.resend[locale]}
++            disabled={isSending || isSubmitting}
++            isLoading={isSending}
++            onClick={() => sendEmailMfa(true)}
++          />
+         </section>
+       </form>
++      <a className='finance-restart' href='/cloud/signup'>{{en: 'Use a different email', fr: 'Utiliser une autre adresse e-mail', zh: '使用其他邮箱'}[locale]}</a>
+     </>
+   )
+ }
+diff --git a/server/src/pages/components/vanilla/CodeInput.tsx b/server/src/pages/components/vanilla/CodeInput.tsx
+--- a/server/src/pages/components/vanilla/CodeInput.tsx
++++ b/server/src/pages/components/vanilla/CodeInput.tsx
+@@ -87,7 +87,7 @@
+     e: KeyboardEvent, index: number,
+   ) => {
+     const allowedKeys = [
+-      'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab',
++      'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab', 'Enter',
+       '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+     ]
+ 
+@@ -176,7 +176,8 @@
+               onPaste={handlePaste}
+               className={`${inputClass} code-input`}
+               type='text'
+-              maxLength={1}
++              maxLength={index === 0 ? 6 : 1}
++              autoComplete={index === 0 ? 'one-time-code' : 'off'}
+               aria-label={`Code input ${index + 1}`}
+               inputMode='numeric'
+               pattern='[0-9]*'
+diff --git a/server/src/pages/blocks/VerifyEmail.tsx b/server/src/pages/blocks/VerifyEmail.tsx
+--- a/server/src/pages/blocks/VerifyEmail.tsx
++++ b/server/src/pages/blocks/VerifyEmail.tsx
+@@ -28,10 +28,11 @@
+   return (
+     <>
+       {success && (
+-        <section className='flex justify-center w-full'>
++        <section className='flex flex-col gap-4 w-full'>
+           <SuccessMessage
+             message={verifyEmail.success[locale]}
+           />
++          <a href='/cloud/start'>Continue to sign in</a>
+         </section>
+       )}
+       {!success && (
+diff --git a/server/src/pages/blocks/SignUp.test.tsx b/server/src/pages/blocks/SignUp.test.tsx
+--- a/server/src/pages/blocks/SignUp.test.tsx
++++ b/server/src/pages/blocks/SignUp.test.tsx
+@@ -82,7 +82,7 @@
+     )
+ 
+     it(
+-      'renders email, password, and confirm password fields',
++      'renders email and password without a redundant password confirmation',
+       () => {
+         const container = setup()
+         const emailField = container.querySelector('input[name="email"]')
+@@ -92,7 +92,7 @@
+         expect(passwordField).toBeDefined()
+ 
+         const confirmPasswordField = container.querySelector('input[name="confirmPassword"]')
+-        expect(confirmPasswordField).toBeDefined()
++        expect(confirmPasswordField).toBeNull()
+       },
+     )
+ 
+@@ -148,16 +148,6 @@
+         )
+         expect(defaultProps.onChange).toHaveBeenCalledWith(
+           'password',
+-          '123456',
+-        )
+-
+-        const confirmPasswordField = container.querySelector('input[name="confirmPassword"]') as HTMLInputElement
+-        fireEvent.input(
+-          confirmPasswordField,
+-          { target: { value: '123456' } },
+-        )
+-        expect(defaultProps.onChange).toHaveBeenCalledWith(
+-          'confirmPassword',
+           '123456',
+         )
+ 
+@@ -254,7 +244,7 @@
+         expect(privacyLink).toBeNull()
+ 
+         expect(container.textContent).not.toContain(signUp.bySignUp.en)
+-        expect(container.textContent).not.toContain(signUp.linkConnect.en)
++        expect(container.querySelector('.text-gray')?.textContent ?? '').not.toContain(signUp.linkConnect.en)
+       },
+     )
+ 
+@@ -278,7 +268,7 @@
+         const privacyLink = container.querySelector('a[href*="privacy"]')
+         expect(privacyLink).toBeNull()
+ 
+-        expect(container.textContent).not.toContain(signUp.linkConnect.en)
++        expect(container.querySelector('.text-gray')?.textContent ?? '').not.toContain(signUp.linkConnect.en)
+       },
+     )
+ 
+@@ -302,7 +292,7 @@
+         const termsLink = container.querySelector('a[href*="terms"]')
+         expect(termsLink).toBeNull()
+ 
+-        expect(container.textContent).not.toContain(signUp.linkConnect.en)
++        expect(container.querySelector('.text-gray')?.textContent ?? '').not.toContain(signUp.linkConnect.en)
+       },
+     )
+ 
+@@ -443,12 +433,12 @@
+ 
+             expect(inputNames).toContain('email')
+             expect(inputNames).toContain('password')
+-            expect(inputNames).toContain('confirmPassword')
++            expect(inputNames).not.toContain('confirmPassword')
+             expect(inputNames).toContain('firstName')
+             expect(inputNames).toContain('lastName')
+ 
+             // Should not contain any custom attribute fields
+-            expect(inputNames.length).toBe(5) // email, password, confirmPassword, firstName, lastName
++            expect(inputNames.length).toBe(4) // email, password, firstName, lastName
+           },
+         )
+ 
+diff --git a/server/src/pages/blocks/EmailMfa.test.tsx b/server/src/pages/blocks/EmailMfa.test.tsx
+--- a/server/src/pages/blocks/EmailMfa.test.tsx
++++ b/server/src/pages/blocks/EmailMfa.test.tsx
+@@ -56,12 +56,12 @@
+     })
+ 
+     it(
+-      'renders the view title from emailMfa locale',
++      'renders a concise email confirmation title',
+       () => {
+         const container = setup()
+         const titleElement = getByText(
+           container,
+-          emailMfa.title.en,
++          'Confirm your email',
+         )
+         expect(titleElement).toBeDefined()
+       },
+@@ -81,7 +81,7 @@
+     )
+ 
+     it(
+-      'renders SecondaryButton with resent text and disabled when resent is true',
++      'allows another resend after announcing the sent code',
+       () => {
+         const props: EmailMfaProps = {
+           ...defaultProps, resent: true,
+@@ -89,10 +89,11 @@
+         const container = setup(props)
+         const secondaryButton = getByText(
+           container,
+-          emailMfa.resent.en,
+-        )
++          emailMfa.resend.en,
++        )
++        expect(getByText(container, emailMfa.resent.en).getAttribute('role')).toBe('status')
+         expect(secondaryButton).toBeDefined()
+-        expect((secondaryButton as HTMLButtonElement).disabled).toBe(true)
++        expect((secondaryButton as HTMLButtonElement).disabled).toBe(false)
+       },
+     )
+ 
+diff --git a/server/src/pages/blocks/Layout.tsx b/server/src/pages/blocks/Layout.tsx
+--- a/server/src/pages/blocks/Layout.tsx
++++ b/server/src/pages/blocks/Layout.tsx
+@@ -1,6 +1,5 @@
+ import { typeConfig } from 'configs'
+ import { LocaleSelector } from 'pages/components'
+-import { layout } from 'pages/tools/locale'
+ 
+ export interface LayoutProps {
+   children: any;
+@@ -19,9 +18,6 @@
+       {locales.length > 1 && <LocaleSelector locale={locale} locales={locales} onChange={onSwitchLocale} />}
+     </header>
+     <section className='finance-content'>{children}</section>
+-    <footer className='finance-credit'>
+-      <a href='https://github.com/ValueMelody/melody-auth' target='_blank' rel='noreferrer'>{layout.poweredByAuth[locale]}</a>
+-    </footer>
+   </main>
+ )
+ 
+diff --git a/server/src/pages/blocks/Layout.test.tsx b/server/src/pages/blocks/Layout.test.tsx
+--- a/server/src/pages/blocks/Layout.test.tsx
++++ b/server/src/pages/blocks/Layout.test.tsx
+@@ -4,7 +4,6 @@
+ } from 'vitest'
+ import { render } from 'hono/jsx/dom'
+ import Layout from './Layout'
+-import { layout } from 'pages/tools/locale'
+ import { typeConfig } from 'configs'
+ 
+ // Unit tests for the Layout Component
+@@ -82,12 +81,12 @@
+     )
+ 
+     it(
+-      'renders the powered-by link with correct href and text',
++      'keeps the sign-in page free of provider credits',
+       () => {
+         const container = setup()
+         const link = container.querySelector('a[href="https://github.com/ValueMelody/melody-auth"]')
+-        expect(link).toBeDefined()
+-        expect(link?.textContent?.trim()).toBe(layout.poweredByAuth[dummyLocale])
++        expect(link).toBeNull()
++        expect(container.querySelector('.finance-credit')).toBeNull()
+       },
+     )
+   },

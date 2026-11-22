@@ -41,6 +41,9 @@ checkId(m.controlDatabaseId);
 Object.assign(base.vars, {
   PORTAL_ORIGIN: origin(m.portalOrigin),
   APP_ORIGIN: m.appOrigin ? origin(m.appOrigin) : "",
+  INVOICER_ORIGIN: m.invoicerOrigin ? origin(m.invoicerOrigin) : "",
+  INVOICER_MARKETING_ORIGIN: m.invoicerMarketingOrigin ? origin(m.invoicerMarketingOrigin) : "",
+  CANONICAL_APP: m.appOrigin ? "true" : "false",
   GOOGLE_LOGIN_CLIENT: m.googleLoginClient || "",
   APPLE_LOGIN_CLIENT: m.appleLoginClient || "",
   IDENTITY_ORIGIN: m.identityOrigin ? origin(m.identityOrigin) : "",
@@ -84,6 +87,11 @@ if (m.appOrigin) {
   if (m.attachAppDomain !== false)
     (configs[0][1].routes ??= []).push({ pattern: new URL(app).hostname, custom_domain: true });
 }
+for (const host of [m.invoicerOrigin,m.invoicerMarketingOrigin].filter(Boolean)) {
+  if (origins.has(origin(host))) throw Error("Use distinct Finance and Invoicer domains.");
+  origins.add(origin(host));
+  (configs[0][1].routes ??= []).push({pattern:new URL(origin(host)).hostname,custom_domain:true});
+}
 const registry = [];
 for (const slot of m.slots) {
   if (
@@ -97,6 +105,13 @@ for (const slot of m.slots) {
   const config = structuredClone(base),
     prefix = "phooey-hosted-" + slot.id;
   config.vars.WORKSPACE_ID = slot.id;
+  if (m.appOrigin) {
+    config.vars.CANONICAL_APP = "true";
+    (configs[0][1].services ??= []).push({
+      binding: "WORKSPACE_SERVICE_" + slot.id.replaceAll("-", "_"),
+      service: prefix,
+    });
+  }
   config.d1_databases.push({
     binding: "DB",
     database_name: prefix + "-ledger",
@@ -113,11 +128,12 @@ for (const slot of m.slots) {
     checkId(slot.invoiceDatabaseId);
     const invoiceName = prefix + "-invoicer";
     config.services = [{ binding: "INVOICER", service: invoiceName }];
+    if (!(configs[0][1].services || []).some(s => s.binding === "INVOICER_ASSETS")) (configs[0][1].services ??= []).push({binding:"INVOICER_ASSETS",service:invoiceName});
     configs.push([slot.id + "-invoicer", {
       name: invoiceName, main: resolve(root, "invoicer/src/worker/index.ts"),
       compatibility_date: base.compatibility_date, compatibility_flags: base.compatibility_flags,
       workers_dev: false, preview_urls: false,
-      vars: { BUNDLE_PREFIX: "/invoicer" },
+      vars: { BUNDLE_PREFIX: m.invoicerOrigin ? `/w/${slot.id}` : "/invoicer", KEY_NAMESPACE: slot.id, PUBLIC_ORIGIN: m.invoicerOrigin || "" },
       assets: { ...base.assets, directory: resolve(root, "invoicer/dist-hosted") },
       d1_databases: [{ binding: "DB", database_name: invoiceName, database_id: slot.invoiceDatabaseId, migrations_dir: resolve(root, "invoicer/migrations") }]
     }]);

@@ -7,13 +7,16 @@ const revision = { type: 'object', required: ['revision'], properties: { revisio
 const error = { description: 'Structured error', content: json(ref('Error')) };
 const itemResponse = { description: 'Invoice with document snapshot, calculated totals, state and revision', content: json(ref('Invoice')) };
 function operation(summary: string, body?: object, response: object = itemResponse, code = '200') {
-  return { summary, security: [{ adminKey: [] }], ...(body ? { requestBody: { required: true, content: json(body) } } : {}), responses: { [code]: response, '401': error, '403': error, '404': error, '409': error, '422': error, '413': error, '503': error } };
+  return { summary, security: [{ apiKey: [] }], ...(body ? { requestBody: { required: true, content: json(body) } } : {}), responses: { [code]: response, '401': error, '403': error, '404': error, '409': error, '422': error, '413': error, '503': error } };
 }
 const id = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
 const paging = [{ name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 } }];
 const list = (name: string) => ({ description: 'Paginated list', content: json({ type: 'object', required: ['items', 'total', 'page', 'limit'], properties: { items: { type: 'array', items: ref(name) }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' } } }) });
 const pdf = { description: 'Generated PDF', headers: { 'X-PDF-Render-Ms': { schema: { type: 'string' }, description: 'Render duration; not a production CPU measurement' } }, content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } } };
 const paths: Record<string, object> = {
+  '/businesses': { get: operation('List accessible businesses',undefined,{description:'Businesses',content:json({type:'object',properties:{items:{type:'array',items:{type:'object',properties:{id:{type:'string'},name:{type:'string'}}}}}})}), post: operation('Create business (dashboard or owner key only)',{type:'object',required:['name'],properties:{name:{type:'string',minLength:1,maxLength:200}}},{description:'Created business'},'201') },
+  '/keys': { get: operation('List active keys for the selected business (owner only)',undefined,{description:'Key metadata; never includes secret values'}), post: operation('Create a business key (owner only; full key returned once)',{type:'object',required:['name'],properties:{name:{type:'string',minLength:1,maxLength:100},scope:{type:'string',enum:['read','write'],default:'read'}}},{description:'Created key, including its one-time secret'},'201') },
+  '/keys/{id}': { parameters:[id], delete:operation('Revoke a business key immediately (owner only)',undefined,{description:'Key revoked'}) },
   '/render': { post: operation('Render without persistence or automatic numbering', ref('InvoiceInput'), pdf) },
   '/invoices': {
     get: { ...operation('List invoices', undefined, list('Invoice')), parameters: [...paging, { name: 'q', in: 'query', schema: { type: 'string', maxLength: 100 } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['all', 'draft', 'issued', 'paid', 'void', 'overdue'] } }, { name: 'archived', in: 'query', schema: { type: 'boolean', default: false } }] },
@@ -33,9 +36,9 @@ const paths: Record<string, object> = {
 };
 for (const action of ['issue', 'duplicate', 'void', 'archive', 'restore']) paths[`/invoices/{id}/${action}`] = { parameters: [id], post: operation(`${action[0].toUpperCase()}${action.slice(1)} invoice`, ref('Revision'), itemResponse, action === 'duplicate' ? '201' : '200') };
 export const openapi = {
-  openapi: '3.1.0', info: { title: 'Invoicer', version: '0.1.0', description: 'Self-hosted single-business invoicing. Decimal monetary inputs; integer minor-unit totals. Stateless rendering does not write to D1. Latin-script text supported.' }, servers: [{ url: '/api/v1' }], paths,
+  openapi: '3.1.0', info: { title: 'Invoicer', version: '0.1.0', description: 'Multi-business invoicing with business-scoped API keys. Decimal monetary inputs; integer minor-unit totals. Stateless rendering does not write to D1. Latin-script text supported.' }, servers: [{ url: '/api/v1' }], paths,
   components: {
-    securitySchemes: { adminKey: { type: 'http', scheme: 'bearer', description: 'The ADMIN_KEY Worker secret. Dashboard cookies are an alternative with same-origin CSRF protection.' } },
+    securitySchemes: { apiKey: { type: 'http', scheme: 'bearer', description: 'A business API key created in API & MCP. The self-hosted ADMIN_KEY also supports owner operations. Dashboard cookies are an alternative with same-origin CSRF protection.' } },
     schemas: {
       InvoiceInput: schema(invoiceInputSchema), InvoiceDocument: schema(documentSchema), Branding: schema(brandingSchema), Party: schema(partySchema), Revision: revision,
       SettingsRecord: { type: 'object', required: ['settings', 'revision'], properties: { settings: schema(settingsSchema), revision: { type: 'integer', minimum: 1 } } },

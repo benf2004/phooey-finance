@@ -1,0 +1,1 @@
+ALTER TABLE customers ADD COLUMN trial_ends_at INTEGER NOT NULL DEFAULT 0;

@@ -7,14 +7,14 @@ import {
   type Branding,
   type Party,
 } from "../shared/model";
-import { api, prepareLogo } from "./api";
+import { api, prepareLogo, assetPath } from "./api";
 
 export function Field({
   label,
   children,
   hint,
 }: {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
   hint?: string;
 }) {
@@ -29,7 +29,7 @@ export function Field({
       {hint && <small>{hint}</small>}
     </>
   );
-  return directControl ? (
+  return directControl && typeof label === "string" ? (
     <label className="field">{content}</label>
   ) : (
     <div className="field">{content}</div>
@@ -211,7 +211,7 @@ export function LogoField({ value, onChange, onError }: BrandingProps) {
             alt="Invoice logo"
             src={
               value.logoData ||
-              invoicePath(`/api/v1/assets/${value.logoAssetId}`)
+              assetPath(value.logoAssetId!)
             }
           />
           <button

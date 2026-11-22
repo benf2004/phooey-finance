@@ -1,7 +1,7 @@
 // Install the pinned upstream server as a private Worker for Finance.
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ const pin = "da208cd90545b7f5b42891d7e3dd83f91c5e984f";
 const name = "phooey-finance-melody";
 const app = "https://finance.phooey.foo";
 const config = join(server, "phooey.wrangler.json");
-const patch = join(root, "hosted/melody/verified-profile.patch");
+const overlay = join(root, "hosted/melody");
 const run = (cmd, args, cwd, capture = false) => execFileSync(cmd, args, {
   cwd, encoding: "utf8", stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
 });
@@ -28,7 +28,20 @@ function install() {
   if (runGitCheck(["cat-file", "-e", pin]) === false)
     git(["fetch", "--depth=1", "https://github.com/ValueMelody/melody-auth.git", pin]);
   git(["checkout", "--quiet", "--detach", pin]);
-  if (!runGitCheck(["apply", "--reverse", "--check", patch])) git(["apply", patch]);
+  const patches = ["verified-profile.patch", "finance-auth.patch", "finance-signup.patch"];
+  // This is a generated upstream checkout. Restore only overlay targets before
+  // applying in order so edits to an earlier patch remain repeatable.
+  const targets = [...new Set(patches.flatMap(name =>
+    [...readFileSync(join(overlay, name), "utf8").matchAll(/^--- a\/(\S+)/gm)].map(match => match[1])
+  ))];
+  git(["restore", "--source", pin, "--worktree", "--", ...targets]);
+  for (const name of patches) {
+    const patch = join(overlay, name);
+    git(["apply", patch]);
+  }
+  copyFileSync(join(overlay, "FinanceMethods.tsx"), join(server, "src/pages/blocks/FinanceMethods.tsx"));
+  copyFileSync(join(overlay, "finance.css"), join(server, "src/pages/finance.css"));
+  copyFileSync(join(overlay, "FinanceSignup.test.ts"), join(server, "src/__tests__/FinanceSignup.test.ts"));
   run("npm", ["ci", "--no-audit", "--no-fund"], server);
   run("npm", ["run", "build"], server);
 }
@@ -65,8 +78,9 @@ function deploy() {
   Object.assign(cfg.vars, {
     ENVIRONMENT: "prod", AUTH_SERVER_URL: app, SERVER_SESSION_EXPIRES_IN: 0,
     GOOGLE_AUTH_CLIENT_ID: providers.googleLoginClient, APPLE_AUTH_CLIENT_ID: providers.appleLoginClient,
-    ENABLE_SIGN_UP: true, ENABLE_PASSWORD_SIGN_IN: true, ENABLE_PASSWORD_RESET: true,
-    ALLOW_PASSKEY_ENROLLMENT: false, OTP_MFA_IS_REQUIRED: false,
+    ENABLE_NAMES: false, NAMES_IS_REQUIRED: false, ENABLE_SIGN_UP: true, ENABLE_PASSWORD_SIGN_IN: true, ENABLE_PASSWORD_RESET: true,
+    ALLOW_PASSKEY_ENROLLMENT: false, OTP_MFA_IS_REQUIRED: false, EMAIL_MFA_IS_REQUIRED: false, SMS_MFA_IS_REQUIRED: false,
+    AUTHORIZATION_CODE_EXPIRES_IN: 600, ENABLE_MFA_REMEMBER_DEVICE: false,
     EMAIL_PROVIDER_NAME: "resend", RESEND_SENDER_ADDRESS: providers.RESEND_SENDER_ADDRESS,
     ENABLE_EMAIL_VERIFICATION: true, ENABLE_USER_APP_CONSENT: false, ENFORCE_ONE_MFA_ENROLLMENT: [],
     COMPANY_LOGO_URL: app + "/business/assets/wordmark.svg",

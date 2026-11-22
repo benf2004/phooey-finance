@@ -8,8 +8,10 @@ import { verifyTotp } from "../src/hosted/totp";
 import { encrypt } from "../src/server/auth";
 import {
   afterPrimary,
+  completeSignIn,
   finishIdentity,
   issueSession,
+  type Customer,
   type HostedEnv,
 } from "../src/hosted/control";
 import { authenticate, credentialVersion, login } from "../src/server/auth";
@@ -24,6 +26,9 @@ function database() {
     "0002_metrics",
     "0003_alerts",
     "0004_login_factors",
+    "0005_subscription_trial",
+    "0006_admin_accounts",
+    "0007_mcp_routing",
   ])
     raw.exec(readFileSync("hosted/migrations/" + file + ".sql", "utf8"));
   raw
@@ -39,12 +44,24 @@ function database() {
   raw.prepare("INSERT INTO workspaces VALUES(?,?,?)").run("one", slot, "owner");
   return {
     raw,
+    async batch(statements: { all(): Promise<unknown> }[]) {
+      raw.exec("BEGIN");
+      try {
+        const results = [];
+        for (const statement of statements) results.push(await statement.all());
+        raw.exec("COMMIT");
+        return results;
+      } catch (error) {
+        raw.exec("ROLLBACK");
+        throw error;
+      }
+    },
     prepare(query: string) {
       const stmt = raw.prepare(query);
       const bound = (...values: string[]) => ({
         first: async () => stmt.get(...values) ?? null,
         all: async () => ({ results: stmt.all(...values) }),
-        run: async () => stmt.run(...values),
+        run: async () => ({ meta: stmt.run(...values) }),
       });
       return { ...bound(), bind: bound };
     },
@@ -74,6 +91,591 @@ function fixture() {
   return { db, env, service, request };
 }
 describe("subscriber workspace", () => {
+  function gatewayFixture() {
+    const f = fixture();
+    f.env.CANONICAL_APP = "true";
+    const gateway = vi.fn((req: Request) => worker.fetch(req, { ...f.env, WORKSPACE_ID: "one" },
+      { waitUntil: () => {} } as unknown as ExecutionContext));
+    f.env.WORKSPACE_SERVICE_one = { fetch: gateway } as unknown as Fetcher;
+    return { ...f, gateway };
+  }
+  it("opens Finance and Invoicer on the app domain using the assigned workspace binding", async () => {
+    const { env, request, gateway, service } = gatewayFixture();
+    const headers = { Cookie: (await issueSession(env, "owner", app)).split(";")[0] };
+    const account = await (await request(app + "/cloud/account", { headers })).text();
+    expect(account).toContain(`href="${app}/"`);
+    expect(account).toContain(`href="${app}/invoicer/"`);
+    expect(account).not.toContain(slot + "/cloud/enter");
+    expect((await request(app + "/cloud/open", { headers })).headers.get("location")).toBe("/");
+    expect((await request(app + "/", { headers })).status).toBe(200);
+    expect((await request(app + "/invoicer/", { headers })).status).toBe(200);
+    expect(gateway.mock.calls.every(([req]) => new URL(req.url).origin === app)).toBe(true);
+    // Public invoice links still identify the workspace for signed-out recipients.
+    expect(service.mock.calls[0][0].url).toBe(slot + "/");
+  });
+  it("requires an app session and rejects another owner's session in the workspace", async () => {
+    const { env, db, request, gateway, service } = gatewayFixture();
+    expect((await request(app + "/invoicer/api/v1/invoices")).status).toBe(401);
+    expect((await request(app + "/settings")).headers.get("location")).toBe("/cloud/start");
+    const wrongAudience = (await issueSession(env, "owner", slot, "dashboard")).split(";")[0];
+    expect((await request(app + "/invoicer/api/v1/invoices", { headers: { Cookie: wrongAudience } })).status).toBe(401);
+    db.raw.exec("INSERT INTO customers(id,email,subject,paid_until) VALUES('other','other@test.example','other',9999999999)");
+    const Cookie = (await issueSession(env, "other", app)).split(";")[0];
+    const response = await gateway(new Request(app + "/invoicer/api/v1/invoices", { headers: { Cookie } }));
+    expect(response.status).toBe(401);
+    expect(service).not.toHaveBeenCalled();
+  });
+  it("checks subscription and request origin before forwarding invoice changes", async () => {
+    const { env, db, request, service } = gatewayFixture();
+    const Cookie = (await issueSession(env, "owner", app)).split(";")[0];
+    expect((await request(app + "/invoicer/api/v1/invoices", {
+      method: "POST", headers: { Cookie, Origin: "https://evil.test" }, body: "{}",
+    })).status).toBe(403);
+    expect(service).not.toHaveBeenCalled();
+    const saved = await request(app + "/invoicer/api/v1/invoices", {
+      method: "POST", headers: { Cookie, Origin: app, "Content-Type": "application/json" }, body: "{}",
+    });
+    expect(saved.status, await saved.text()).toBe(200);
+    service.mockClear();
+    db.raw.exec("UPDATE customers SET paid_until=0");
+    expect((await request(app + "/invoicer/", { headers: { Cookie } })).status).toBe(402);
+    expect(service).not.toHaveBeenCalled();
+  });
+  it("redirects old browser links but retains public invoice access", async () => {
+    const { request, service } = gatewayFixture();
+    expect((await request(slot + "/")).headers.get("location")).toBe(app + "/");
+    expect((await request(slot + "/transactions?account=one")).headers.get("location")).toBe(app + "/transactions?account=one");
+    expect((await request(slot + "/cloud/enter?view=invoicer")).headers.get("location")).toBe(app + "/invoicer/");
+    expect((await request(slot + "/invoicer/s/shared/info")).status).toBe(200);
+    expect(service).toHaveBeenCalledOnce();
+  });
+  it("does not fall back to the old origin when a workspace binding is missing", async () => {
+    const { env, request } = gatewayFixture();
+    delete env.WORKSPACE_SERVICE_one;
+    const Cookie = (await issueSession(env, "owner", app)).split(";")[0];
+    expect((await request(app + "/", { headers: { Cookie } })).status).toBe(503);
+  });
+  it("gives administrators their own dashboard and Invoicer without checkout", async () => {
+    const { db, env, request, service } = fixture();
+    db.raw.exec(`UPDATE customers SET paid_until=0;
+      UPDATE workspaces SET owner=NULL;
+      INSERT INTO account_admins VALUES('owner');
+      INSERT INTO workspaces VALUES('two','https://empty.example.test',NULL)`);
+    const headers = {
+      Cookie: (await issueSession(env, "owner", app)).split(";")[0],
+      Origin: app,
+    };
+    const account = await request(app + "/cloud/account", { headers });
+    const html = await account.text();
+    expect(html).toContain("Administrator · Full access included");
+    expect(html).toContain("Open Finance dashboard");
+    expect(html).toContain("Open Invoicer");
+    expect(html).not.toContain('action="/cloud/checkout"');
+    expect(
+      (await request(app + "/cloud/open", { headers })).headers.get("location"),
+    ).toBe(slot + "/cloud/enter");
+    expect(
+      (
+        await request(app + "/cloud/checkout", { method: "POST", headers })
+      ).headers.get("location"),
+    ).toBe("/cloud/open");
+    expect(
+      db.raw
+        .prepare("SELECT count(*) AS n FROM workspaces WHERE owner='owner'")
+        .get()?.n,
+    ).toBe(1);
+    expect(
+      db.raw.prepare("SELECT owner FROM workspaces WHERE id='two'").get()
+        ?.owner,
+    ).toBeNull();
+    expect(
+      db.raw
+        .prepare(
+          "SELECT stripe_customer,checkout_attempt FROM customers WHERE id='owner'",
+        )
+        .get(),
+    ).toMatchObject({ stripe_customer: null, checkout_attempt: null });
+    const dashboard = {
+      Cookie: (await issueSession(env, "owner", slot, "dashboard")).split(
+        ";",
+      )[0],
+    };
+    expect(
+      (await request(slot + "/invoicer/", { headers: dashboard })).status,
+    ).toBe(200);
+    expect(service).toHaveBeenCalledOnce();
+    // Revoking admin access does not leave a permanent complimentary grant.
+    db.raw.exec("DELETE FROM account_admins WHERE customer='owner'");
+    expect(
+      (await request(slot + "/invoicer/", { headers: dashboard })).status,
+    ).toBe(402);
+  });
+  it("never assigns an administrator another customer's workspace when capacity is full", async () => {
+    const { db, env, request } = fixture();
+    db.raw
+      .exec(`INSERT INTO customers(id,subject,email) VALUES('admin','admin-subject','admin@example.test');
+      INSERT INTO account_admins VALUES('admin')`);
+    const headers = {
+      Cookie: (await issueSession(env, "admin", app)).split(";")[0],
+    };
+    const account = await request(app + "/cloud/account", { headers });
+    expect(account.status).toBe(200);
+    const html = await account.text();
+    expect(html).toContain("All hosted workspaces are assigned");
+    expect(html).not.toContain('action="/cloud/checkout"');
+    expect(
+      db.raw.prepare("SELECT owner FROM workspaces WHERE id='one'").get()
+        ?.owner,
+    ).toBe("owner");
+    expect((await request(app + "/admin", { headers })).status).toBe(200);
+    expect(
+      (
+        await request(
+          app + "/cloud/authorize-workspace?slot=one&nonce=" + "x".repeat(43),
+          { headers },
+        )
+      ).status,
+    ).toBe(403);
+  });
+  it("keeps native account forms same-origin and rejects forged origins", async () => {
+    const { env, db, request } = fixture();
+    db.raw.exec("INSERT INTO account_admins VALUES('owner')");
+    const Cookie = (await issueSession(env, "owner", app)).split(";")[0];
+    expect(
+      (
+        await request(app + "/cloud/account", { headers: { Cookie } })
+      ).headers.get("Referrer-Policy"),
+    ).toBe("same-origin");
+    for (const Origin of ["null", "https://evil.test", market]) {
+      expect(
+        (
+          await request(app + "/cloud/checkout", {
+            method: "POST",
+            headers: { Cookie, Origin },
+          })
+        ).status,
+      ).toBe(403);
+    }
+    expect(
+      (
+        await request(app + "/cloud/checkout", {
+          method: "POST",
+          headers: { Cookie, Origin: app },
+        })
+      ).status,
+    ).toBe(303);
+  });
+  it("keeps security settings readable but locks changes until reauthentication", async () => {
+    const { env, db, request } = fixture();
+    env.MELODY = {} as Fetcher;
+    const Cookie = (await issueSession(env, "owner", app)).split(";")[0];
+    const fresh = await request(app + "/cloud/security", {
+      headers: { Cookie },
+    });
+    const html = await fresh.text();
+    expect(html).toContain('class="account-page security-page"');
+    expect(html).toContain('id="authenticator-title"');
+    expect(html).not.toContain('<fieldset class="security-controls" disabled>');
+    db.raw.exec("UPDATE sessions SET expires=expires-601");
+    const stale = await request(app + "/cloud/security", {
+      headers: { Cookie },
+    });
+    const locked = await stale.text();
+    expect(locked).toContain("Confirm it’s you to make changes");
+    expect(
+      locked.match(/<fieldset class="security-controls" disabled>/g),
+    ).toHaveLength(3);
+    expect(
+      (
+        await request(app + "/cloud/security/setup-code", {
+          method: "POST",
+          headers: { Cookie, Origin: app, "Content-Type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(403);
+  });
+  it("keeps validation failures on the admin form and handles invalid page numbers", async () => {
+    const { db, env, request } = fixture();
+    db.raw.exec("INSERT INTO account_admins VALUES('owner')");
+    const headers = {
+      Cookie: (await issueSession(env, "owner", app)).split(";")[0],
+      Origin: app,
+    };
+    const failed = await request(app + "/admin", {
+      method: "POST",
+      headers,
+      body: new URLSearchParams({ email: "not-an-email" }),
+    });
+    expect(failed.status).toBe(400);
+    const html = await failed.text();
+    expect(html).toContain('value="not-an-email"');
+    expect(html).toContain('id="grant-error" role="alert"');
+    expect(html).toContain("User directory");
+    expect(
+      (await request(app + "/admin?page=broken", { headers })).status,
+    ).toBe(200);
+  });
+  it("offers optional 2FA for new accounts, but not on every sign-in", async () => {
+    const { env, request } = fixture();
+    env.MELODY = {} as Fetcher;
+    const first = await completeSignIn(env, "new-identity", "new@example.test");
+    expect(first.headers.get("location")).toBe(app + "/cloud/security/setup");
+    const cookie = first.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("__Host-phooey_session="))!
+      .split(";")[0];
+    const setup = await request(app + "/cloud/security/setup", {
+      headers: { Cookie: cookie },
+    });
+    expect(setup.status).toBe(200);
+    expect(await setup.text()).toContain('href="/cloud/account">Skip for now');
+    expect(
+      (
+        await completeSignIn(env, "new-identity", "new@example.test")
+      ).headers.get("location"),
+    ).toBe(app + "/cloud/account");
+    expect(
+      (
+        await completeSignIn(
+          env,
+          "new-identity",
+          "new@example.test",
+          "https://evil.test",
+        )
+      ).headers.get("location"),
+    ).toBe(app + "/cloud/account");
+  });
+  it("preserves the admin destination through the identity callback and optional second factor", async () => {
+    const { env, db, request } = fixture();
+    env.MELODY_CLIENT = "phooey-finance";
+    env.MELODY = {
+      fetch: async (req: Request) =>
+        Response.json(
+          new URL(req.url).pathname.endsWith("/token")
+            ? { access_token: "test" }
+            : {
+                authId: "owner",
+                socialAccountType: null,
+                socialAccountId: null,
+                email: "owner@example.test",
+                emailVerified: true,
+              },
+        ),
+    } as Fetcher;
+    const subject = "melody:" + app + "|owner";
+    db.raw
+      .prepare("INSERT INTO login_identities VALUES(?,?)")
+      .run(subject, "owner");
+    db.raw.exec("INSERT INTO account_admins VALUES('owner')");
+    for (const twoFactor of [false, true]) {
+      if (twoFactor)
+        db.raw.exec("INSERT INTO login_totp VALUES('owner','encrypted',-1)");
+      const start = await request(app + "/cloud/start?next=/admin");
+      const state = new URL(start.headers.get("location")!).searchParams.get(
+        "state",
+      );
+      const done = await request(
+        app + "/cloud/callback?code=test&state=" + state,
+        { headers: { Cookie: start.headers.get("set-cookie")!.split(";")[0] } },
+      );
+      expect(done.headers.get("location")).toBe(
+        twoFactor ? "/cloud/security/verify" : app + "/admin",
+      );
+      if (twoFactor) {
+        const row = db.raw
+          .prepare("SELECT payload FROM challenges WHERE audience='second'")
+          .get();
+        expect(JSON.parse(String(row?.payload)).destination).toBe("/admin");
+      }
+    }
+  });
+  it("opens Invoicer through the shared workspace handoff", async () => {
+    const { env, request } = fixture();
+    expect((await request(app + "/invoicer/")).headers.get("location")).toBe(
+      "/cloud/start?next=/invoicer/",
+    );
+    const cookie = (await issueSession(env, "owner", app)).split(";")[0];
+    const open = await request(app + "/invoicer/", {
+      headers: { Cookie: cookie },
+    });
+    expect(open.headers.get("location")).toBe(
+      slot + "/cloud/enter?view=invoicer",
+    );
+    const enter = await request(open.headers.get("location")!);
+    const authorize = await request(enter.headers.get("location")!, {
+      headers: { Cookie: cookie },
+    });
+    const accept = await request(authorize.headers.get("location")!, {
+      headers: { Cookie: enter.headers.get("set-cookie")!.split(";")[0] },
+    });
+    expect(accept.headers.get("location")).toBe("/invoicer/");
+    expect(accept.headers.get("set-cookie")).toContain(
+      "__Host-phooey_dashboard=",
+    );
+  });
+  it("restricts the user directory and grants to administrators on the app domain", async () => {
+    const { db, env, request } = fixture();
+    const headers = {
+      Cookie: (await issueSession(env, "owner", app)).split(";")[0],
+      Origin: app,
+    };
+    expect((await request(app + "/admin")).headers.get("location")).toBe(
+      "/cloud/start?next=/admin",
+    );
+    expect((await request(app + "/admin", { headers })).status).toBe(403);
+    const post = (origin: string) =>
+      request(app + "/admin", {
+        method: "POST",
+        headers: { ...headers, Origin: origin },
+        body: new URLSearchParams({ email: "new@example.test" }),
+      });
+    expect((await post(app)).status).toBe(403);
+    db.raw.exec("INSERT INTO account_admins VALUES('owner')");
+    expect((await post(market)).status).toBe(403);
+    expect((await request(market + "/admin", { headers })).status).toBe(404);
+    const directory = await request(app + "/admin", { headers });
+    expect(directory.headers.get("Cache-Control")).toBe("no-store");
+    expect(await directory.text()).toContain("owner@example.test");
+    expect((await post(app)).status).toBe(409);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM customers").get()?.n).toBe(
+      1,
+    );
+  });
+  it("reserves one free workspace, verifies its owner and opens Finance and Invoicer without Stripe", async () => {
+    const { db, env, request } = fixture();
+    db.raw.exec(
+      "INSERT INTO account_admins VALUES('owner'); INSERT INTO workspaces VALUES('two','https://free.example.test',NULL)",
+    );
+    const adminHeaders = {
+      Cookie: (await issueSession(env, "owner", app)).split(";")[0],
+      Origin: app,
+    };
+    const grant = (email: string) =>
+      request(app + "/admin", {
+        method: "POST",
+        headers: adminHeaders,
+        body: new URLSearchParams({ email }),
+      });
+    expect((await grant("owner@example.test")).status).toBe(409);
+    for (const email of ["Collector@Example.test", "collector@example.test"]) {
+      expect((await grant(email)).headers.get("location")).toBe(
+        "/admin?saved=1",
+      );
+    }
+    expect(
+      db.raw.prepare("SELECT count(*) AS n FROM free_accounts").get()?.n,
+    ).toBe(1);
+    expect(
+      await (await request(app + "/admin", { headers: adminHeaders })).text(),
+    ).toContain("Awaiting signup");
+    await completeSignIn(env, "verified-other", "different@example.test");
+    const signedIn = await completeSignIn(
+      env,
+      "verified-owner",
+      "Collector@Example.test",
+    );
+    const headers = {
+      Cookie: signedIn.headers.getSetCookie()[0].split(";")[0],
+      Origin: app,
+    };
+    const account = await (
+      await request(app + "/cloud/account", { headers })
+    ).text();
+    expect(account).toContain("Complimentary account");
+    expect(account).not.toContain("Start my 14-day free trial");
+    expect(
+      (await request(app + "/cloud/open", { headers })).headers.get("location"),
+    ).toBe("https://free.example.test/cloud/enter");
+    expect(
+      (await request(app + "/cloud/checkout", { method: "POST", headers }))
+        .status,
+    ).toBe(409);
+    const guest = db.raw
+      .prepare("SELECT * FROM hosted_accounts WHERE subject='verified-owner'")
+      .get()!;
+    expect(guest.paid_until).toBe(0);
+    expect(guest.is_admin).toBe(0);
+    const workspaceCookie = (
+      await issueSession(
+        env,
+        String(guest.id),
+        "https://free.example.test",
+        "dashboard",
+      )
+    ).split(";")[0];
+    const res = await worker.fetch(
+      new Request("https://free.example.test/invoicer/", {
+        headers: { Cookie: workspaceCookie },
+      }),
+      { ...env, WORKSPACE_ID: "two" },
+      {} as unknown as ExecutionContext,
+    );
+    expect(res.status).toBe(200);
+    await completeSignIn(
+      env,
+      "another-verified-identity",
+      "collector@example.test",
+    );
+    expect(
+      db.raw
+        .prepare(
+          "SELECT complimentary FROM hosted_accounts WHERE subject='another-verified-identity'",
+        )
+        .get()?.complimentary,
+    ).toBe(0);
+    expect((await grant("collector@example.test")).status).toBe(409);
+  });
+  it("opens Melody account creation from the marketing signup and old waitlist links", async () => {
+    const { env, request } = fixture();
+    env.MELODY = {} as Fetcher;
+    env.MELODY_CLIENT = "phooey-finance";
+    for (const path of ["/cloud/signup", "/waitlist", "/cloud/waitlist"]) {
+      expect((await request(market + path)).headers.get("location")).toBe(
+        app + "/cloud/signup",
+      );
+    }
+    for (const path of ["/cloud/signup", "/cloud/start"]) {
+      const response = await request(app + path);
+      const authorize = new URL(response.headers.get("location")!);
+      expect(authorize.origin + authorize.pathname).toBe(
+        app + "/oauth2/v1/authorize",
+      );
+      expect(authorize.searchParams.get("step")).toBe(
+        path === "/cloud/signup" ? "sign_up" : null,
+      );
+      expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(response.headers.get("set-cookie")).toBeTruthy();
+    }
+  });
+  it("replaces legacy Checkout, grants the trial immediately, and requires payment for the following year", async () => {
+    const { env, db, request } = fixture();
+    env.STRIPE_SECRET = "test";
+    env.STRIPE_PRICE = "price_year";
+    db.raw.exec(
+      "UPDATE customers SET paid_until=0, stripe_customer='cus_owner', checkout_id='cs_old'",
+    );
+    const headers = {
+      Cookie: (await issueSession(env, "owner", app)).split(";")[0],
+      Origin: app,
+    };
+    const account = () =>
+      request(app + "/cloud/account", { headers }).then((res) => res.text());
+    const start = () =>
+      request(app + "/cloud/checkout", { method: "POST", headers });
+    const sync = () =>
+      request(app + "/cloud/account?checkout=complete", { headers });
+    const owner = () =>
+      db.raw
+        .prepare("SELECT * FROM customers WHERE id='owner'")
+        .get() as unknown as Customer;
+    const trialEnd = Math.floor(Date.now() / 1000) + 14 * 86400;
+    const yearEnd = trialEnd + 365 * 86400;
+    const forms: URLSearchParams[] = [];
+    let expired = false;
+    let complete = false;
+    let status = "trialing";
+    let invoiceStatus = "open";
+    let invoiceReason = "subscription_cycle";
+    const mock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/v1/prices/price_year")
+          return Response.json({
+            active: true,
+            currency: "usd",
+            unit_amount: 2900,
+            recurring: { interval: "year", interval_count: 1 },
+          });
+        if (path === "/v1/checkout/sessions/cs_old")
+          return Response.json({ status: "open" });
+        if (path === "/v1/checkout/sessions/cs_old/expire") {
+          expired = true;
+          return Response.json({ status: "expired" });
+        }
+        if (path === "/v1/checkout/sessions") {
+          forms.push(new URLSearchParams(String(init?.body)));
+          return Response.json({
+            id: "cs_trial",
+            url: "https://checkout.example/trial",
+          });
+        }
+        if (path === "/v1/checkout/sessions/cs_trial")
+          return Response.json({
+            status: complete ? "complete" : "open",
+            metadata: { offer: "finance-14-days" },
+            url: "https://checkout.example/trial",
+            customer: "cus_owner",
+            subscription: "sub_owner",
+          });
+        if (path === "/v1/subscriptions/sub_owner")
+          return Response.json({
+            id: "sub_owner",
+            customer: "cus_owner",
+            status,
+            trial_end: trialEnd,
+            current_period_end: yearEnd,
+            items: { data: [{ price: { id: "price_year" } }] },
+            latest_invoice: {
+              status: invoiceStatus,
+              billing_reason: invoiceReason,
+            },
+          });
+        throw Error("Unexpected Stripe request " + path);
+      });
+    try {
+      expect(await account()).toContain("Start my 14-day free trial");
+      for (let i = 0; i < 2; i++)
+        expect((await start()).headers.get("location")).toBe(
+          "https://checkout.example/trial",
+        );
+      expect(expired).toBe(true);
+      expect(forms).toHaveLength(1);
+      expect(forms[0].get("subscription_data[trial_period_days]")).toBe("14");
+      expect(forms[0].get("payment_method_collection")).toBe("always");
+      expect(forms[0].get("line_items[0][price]")).toBe("price_year");
+      expect(forms[0].get("success_url")).toBe(
+        app + "/cloud/account?checkout=complete",
+      );
+      complete = true;
+      expect((await sync()).headers.get("location")).toBe("/cloud/account");
+      expect(owner().paid_until).toBe(trialEnd);
+      expect(await account()).toContain("Free trial through");
+      expect(
+        (await request(app + "/cloud/open", { headers })).headers.get(
+          "location",
+        ),
+      ).toBe(slot + "/cloud/enter");
+      const paid = () =>
+        db.raw
+          .prepare("SELECT count(*) AS n FROM milestones WHERE event='paid'")
+          .get()!.n;
+      expect(paid()).toBe(0);
+      status = "active";
+      const { refreshCheckout } = await import("../src/hosted/billing");
+      await refreshCheckout(env, owner());
+      expect(owner().paid_until).toBe(trialEnd);
+      invoiceStatus = "paid";
+      invoiceReason = "subscription_create";
+      await refreshCheckout(env, owner());
+      expect(owner().paid_until).toBe(trialEnd);
+      invoiceReason = "subscription_cycle";
+      await refreshCheckout(env, owner());
+      expect(owner().paid_until).toBe(yearEnd);
+      expect(paid()).toBe(1);
+      status = "canceled";
+      db.raw.exec(
+        "UPDATE customers SET paid_until=0, checkout_id=NULL, checkout_attempt=NULL",
+      );
+      expect(await account()).toContain("Continue to billing");
+      await start();
+      expect(forms).toHaveLength(2);
+      expect(forms[1].has("subscription_data[trial_period_days]")).toBe(false);
+    } finally {
+      mock.mockRestore();
+    }
+  });
   it("exposes the fictional dashboard and sends owners to their private workspace", async () => {
     const { request, env } = fixture();
     expect((await request(market + "/dashboard-preview")).status).toBe(200);
@@ -274,7 +876,7 @@ describe("subscriber workspace", () => {
         headers: { Cookie: start.headers.get("set-cookie")!.split(";")[0] },
       }),
     );
-    expect(res.headers.get("location")).toBe(app + "/cloud/account");
+    expect(res.headers.get("location")).toBe(app + "/cloud/security/setup");
     expect(db.raw.prepare("SELECT count(*) AS n FROM customers").get()?.n).toBe(
       2,
     );
@@ -425,7 +1027,25 @@ describe("subscriber workspace", () => {
       (signed.readUInt32BE(signed[19] & 15) & 0x7fffffff) % 1000000,
     ).padStart(6, "0");
     expect(
-      (await post("confirm-code", session + "; " + ticket, { code })).status,
+      (await post("confirm-code", session + "; " + ticket, { code: "invalid" }))
+        .status,
+    ).toBe(400);
+    // The same setup key remains usable after a typo.
+    const confirmed = await post("confirm-code", session + "; " + ticket, {
+      code,
+    });
+    expect(confirmed.status).toBe(200);
+    const renewed = confirmed.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith("__Host-phooey_session="))!
+      .split(";")[0];
+    expect(renewed).toMatch(/session=.+/);
+    expect(
+      (
+        await request(app + "/cloud/security", {
+          headers: { Cookie: renewed },
+        })
+      ).status,
     ).toBe(200);
     expect(
       db.raw.prepare("SELECT secret FROM login_totp").get()?.secret,
@@ -543,5 +1163,57 @@ describe("subscriber workspace", () => {
     env.ADMIN_KEY = "b".repeat(40);
     expect(await credentialVersion(env)).not.toBe(version);
     expect(await authenticate(env, req)).toBeNull();
+  });
+});
+
+describe('Invoicer own-domain gateway', () => {
+  const invoice = 'https://invoicer.phooey.foo';
+  function invoiceFixture() {
+    const f = fixture();
+    f.env.CANONICAL_APP = 'true';
+    f.env.INVOICER_ORIGIN = invoice;
+    f.env.INVOICER_MARKETING_ORIGIN = 'https://getinvoicer.phooey.foo';
+    f.env.WORKSPACE_SERVICE_one = {fetch: (req:Request) => worker.fetch(req,{...f.env,WORKSPACE_ID:'one'},{waitUntil(){}} as unknown as ExecutionContext)} as Fetcher;
+    f.env.INVOICER_ASSETS = {fetch: async (req:Request) => new Response(new URL(req.url).pathname,{headers:{'Content-Type':'text/javascript'}})} as Fetcher;
+    return f;
+  }
+  it('moves browser URLs and serves static assets without a session',async()=>{
+    const f=invoiceFixture();
+    const redirect=await f.request(app+'/invoicer/new');
+    expect(redirect.headers.get('Location')).toBe(invoice+'/new');
+    const asset=await f.request(invoice+'/assets/app.js');
+    expect(asset.headers.get('Content-Type')).toBe('text/javascript');
+    expect(await asset.text()).toBe('/assets/app.js');
+  });
+  it('binds the one-use login handoff to the initiating browser',async()=>{
+    const f=invoiceFixture();
+    const start=await f.request(invoice+'/');
+    const startCookie=start.headers.get('Set-Cookie')!.split(';')[0];
+    const nonce=new URL(start.headers.get('Location')!).searchParams.get('nonce');
+    const financeSession=await issueSession(f.env,'owner',app);
+    const handoff=await f.request(app+'/cloud/invoicer?nonce='+nonce,{headers:{Cookie:financeSession}});
+    expect(handoff.headers.get('Location')).toContain(invoice+'/auth/accept?ticket=');
+    const accepted=await f.request(handoff.headers.get('Location')!,{headers:{Cookie:startCookie}});
+    expect(accepted.status).toBe(303);
+    const cookie=accepted.headers.get('Set-Cookie')!.split(';')[0];
+    const page=await f.request(invoice+'/api/v1/invoices',{headers:{Cookie:cookie}});
+    expect(page.status).toBe(200);
+    expect(new URL(f.service.mock.calls.at(-1)![0].url).pathname).toBe('/api/v1/invoices');
+    expect(f.service.mock.calls.at(-1)![0].headers.get('Authorization')).toBe('Bearer '+'i'.repeat(32));
+    expect((await f.request(handoff.headers.get('Location')!,{headers:{Cookie:startCookie}})).status).toBe(400);
+  });
+  it('passes only the supplied API key to the selected workspace, never the owner key',async()=>{
+    const f=invoiceFixture(), key='phinv_one_'+'a'.repeat(64);
+    const result=await f.request(invoice+'/mcp',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:'{}'});
+    expect(result.status).toBe(200);
+    expect(f.service.mock.calls.at(-1)![0].headers.get('Authorization')).toBe('Bearer '+key);
+    expect(new URL(f.service.mock.calls.at(-1)![0].url).pathname).toBe('/mcp');
+  });
+  it('rejects cross-origin dashboard mutations and anonymous data access',async()=>{
+    const f=invoiceFixture();
+    const cookie=await issueSession(f.env,'owner',invoice);
+    expect((await f.request(invoice+'/api/v1/keys',{method:'POST',headers:{Cookie:cookie,Origin:'https://evil.test','Content-Type':'application/json'},body:'{}'})).status).toBe(403);
+    expect((await f.request(invoice+'/api/v1/invoices')).status).toBe(401);
+    expect(f.service).not.toHaveBeenCalled();
   });
 });

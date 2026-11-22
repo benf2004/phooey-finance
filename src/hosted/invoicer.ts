@@ -6,11 +6,13 @@ export function publicInvoiceRead(req: Request, path: string) {
   return /^\/invoicer\/(?:s\/[a-zA-Z0-9_-]+(?:\/(?:pdf|info))?|assets\/[\w.-]+|fonts\/[\w.-]+|source\.tar\.gz|LICENSE\.txt)$/.test(
     path,
   );
+
 }
 export async function forwardInvoice(
   env: HostedEnv,
   req: Request,
   authenticated: boolean,
+  externalKey = false,
 ) {
   assert(env.INVOICER, 404, "Invoicer is unavailable.");
   const url = new URL(req.url);
@@ -22,10 +24,15 @@ export async function forwardInvoice(
     "Idempotency-Key",
     "If-None-Match",
     "Range",
+    "X-Business-Id",
+    "MCP-Protocol-Version",
+    "Mcp-Session-Id",
+    "Origin",
   ]) {
     const value = req.headers.get(name);
     if (value) headers.set(name, value);
   }
+  if (externalKey) headers.set("Authorization", req.headers.get("Authorization") || "");
   if (authenticated) {
     assert(
       env.INVOICER_KEY && env.INVOICER_KEY.length >= 32,
@@ -44,12 +51,16 @@ export async function forwardInvoice(
     );
     headers.set("Authorization", "Bearer " + env.INVOICER_KEY);
   }
-  return env.INVOICER.fetch(
-    new Request(url, {
-      method: req.method,
+  const response = await env.INVOICER.fetch(
+    new Request(new Request(url, req), {
       headers,
-      body: req.body,
       redirect: "manual",
     }),
   );
+  if (new URL(req.url).origin !== env.INVOICER_ORIGIN && response.headers.get("Content-Type")?.includes("text/html")) {
+    return new HTMLRewriter().on('[src], [href]', { element(el) {
+      for (const attr of ['src','href']) { const value = el.getAttribute(attr); if (value?.startsWith('/assets/') || value?.startsWith('/fonts/')) el.setAttribute(attr,'/invoicer'+value); }
+    }}).transform(response);
+  }
+  return response;
 }

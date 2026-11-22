@@ -8,6 +8,7 @@ import { Button, ErrorNotice, Field, Panel } from "../ui";
 export type BankConnectionState = {
   status: string;
   last_success: string | null;
+  initial_sync_start: string | null;
   last_error: string | null;
   generation: string;
   selectionReady: boolean;
@@ -22,8 +23,10 @@ export type BankConnectionState = {
 };
 export function BankConnection({
   connection,
+  syncing = false,
 }: {
   connection: BankConnectionState | null | undefined;
+  syncing?: boolean;
 }) {
   const { refresh, notify } = useWorkspace();
   const imported = connection?.importedAccounts ?? [];
@@ -31,11 +34,16 @@ export function BankConnection({
   const [selected, setSelected] = useState<string[]>([]);
   const [removeUnselected, setRemoveUnselected] = useState(false);
   const [start, setStart] = useState("");
+  const [firstStart, setFirstStart] = useState("");
+  const today = new Date().toLocaleDateString("en-CA");
+  const needsStart =
+    !!connection && !connection.initial_sync_start && !connection.last_success;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setSelected(connection?.selectedAccounts ?? []);
     setRemoveUnselected(false);
+    setFirstStart(connection?.initial_sync_start ?? "");
   }, [connection?.generation]);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -74,7 +82,10 @@ export function BankConnection({
   const canSync =
     !!connection?.selectionReady &&
     !!connection.selectedAccounts.length &&
-    !dirty;
+    !dirty &&
+    !syncing &&
+    (!needsStart ||
+      (!!firstStart && firstStart >= "1970-01-01" && firstStart <= today));
   const tokenForm = (
     <form
       className="form-stack"
@@ -139,7 +150,10 @@ export function BankConnection({
                     removeUnselected,
                   });
                   if (selected.length) {
-                    await post("/sync", {});
+                    await post(
+                      "/sync",
+                      needsStart ? { start: firstStart } : {},
+                    );
                     notify("Selected accounts queued for import");
                   } else notify("Bank sync paused");
                 });
@@ -163,7 +177,7 @@ export function BankConnection({
               </div>
               <fieldset
                 className="bank-account-list"
-                disabled={busy}
+                disabled={busy || syncing}
                 aria-label="Accounts to import"
               >
                 {choices.map((account) => {
@@ -226,8 +240,31 @@ export function BankConnection({
                   transactions
                 </label>
               )}
+              {needsStart && (
+                <Field
+                  label="Sync transactions from"
+                  hint="Import from this date through today, as far back as your bank provides."
+                >
+                  <input
+                    type="date"
+                    required={selected.length > 0}
+                    min="1970-01-01"
+                    max={today}
+                    value={firstStart}
+                    disabled={busy || syncing}
+                    onChange={(e) => setFirstStart(e.target.value)}
+                  />
+                </Field>
+              )}
               <div className="actions">
-                <Button busy={busy} disabled={!choices.length}>
+                <Button
+                  busy={busy}
+                  disabled={
+                    !choices.length ||
+                    syncing ||
+                    (needsStart && selected.length > 0 && !firstStart)
+                  }
+                >
                   {selected.length
                     ? connection.selectionReady
                       ? "Save & sync"
@@ -245,13 +282,16 @@ export function BankConnection({
                   disabled={!canSync}
                   onClick={() =>
                     void run(async () => {
-                      await post("/sync", {});
+                      await post(
+                        "/sync",
+                        needsStart ? { start: firstStart } : {},
+                      );
                       notify("Sync queued");
                     })
                   }
                 >
                   <RefreshCw size={14} />
-                  Sync now
+                  {syncing ? "Sync in progress" : "Sync now"}
                 </Button>
                 <Button
                   variant="ghost"
@@ -287,13 +327,15 @@ export function BankConnection({
                   <Field label="From">
                     <input
                       type="date"
+                      min="1970-01-01"
+                      max={today}
                       value={start}
                       onChange={(e) => setStart(e.target.value)}
                     />
                   </Field>
                   <Button
                     variant="secondary"
-                    disabled={!canSync || !start || busy}
+                    disabled={!canSync || !start || start > today || busy}
                     onClick={() =>
                       void run(async () => {
                         await post("/sync", { start });

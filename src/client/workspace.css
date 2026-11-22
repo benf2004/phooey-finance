@@ -492,10 +492,191 @@ body {
   }
 }
 
-.dashboard-preview { max-width: 1180px; margin: auto; padding: clamp(14px,3vw,36px); }
-.preview-brand { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #103b33; color: #f3f7ef; border-radius: 8px; padding: 12px 18px; }
-.preview-brand a { color: inherit; }
-.preview-brand strong { font-weight: 750; font-size: 21px; letter-spacing: -.05em; }
-.dashboard-preview .explorer-header { justify-content: space-between; }
-.dashboard-preview .explorer-header h1 { margin-bottom: 3px; }
-.dashboard-preview #transactions { min-width: 0; }
+.dashboard-preview {
+  max-width: 1180px;
+  margin: auto;
+  padding: clamp(14px, 3vw, 36px);
+}
+.preview-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #103b33;
+  color: #f3f7ef;
+  border-radius: 8px;
+  padding: 12px 18px;
+}
+.preview-brand a {
+  color: inherit;
+}
+.preview-brand strong {
+  font-weight: 750;
+  font-size: 21px;
+  letter-spacing: -0.05em;
+}
+.dashboard-preview .explorer-header {
+  justify-content: space-between;
+}
+.dashboard-preview .explorer-header h1 {
+  margin-bottom: 3px;
+}
+.dashboard-preview #transactions {
+  min-width: 0;
+}
+
+/* Phooey editorial system: quiet surfaces, clear type, useful density. */
+@font-face {
+  font-family: "DM Sans";
+  src: url("/business/fonts/dm-sans-latin.woff2") format("woff2");
+  font-weight: 100 1000;
+  font-display: swap;
+}
+:root {
+  font-family: "DM Sans", Helvetica, Arial, sans-serif;
+  --bg: #f6f5ef;
+  --surface: #fffef9;
+  --surface-soft: #eeeee5;
+  --ink: #203a32;
+  --muted: #606b63;
+  --line: #d6dad1;
+  --green: #265e49;
+  --green-soft: #e2ebd9;
+}
+[data-theme="dark"] {
+  --bg: #19231f;
+  --surface: #202d26;
+  --surface-soft: #2a382f;
+  --ink: #f0f1e8;
+  --muted: #b7c4b8;
+  --line: #405044;
+  --green: #bad5a8;
+  --green-soft: #344b36;
+}
+.app .sidebar {
+  --surface: var(--bg);
+  --surface-soft: var(--green-soft);
+  --ink: inherit;
+  --muted: inherit;
+  --line: inherit;
+  --green-soft: inherit;
+  --green: inherit;
+  background: var(--bg);
+  color: var(--ink);
+  border-right: 1px solid var(--line);
+}
+.app .sidebar .brand-lockup img {
+  content: url("/business/assets/wordmark.svg");
+}
+[data-theme="dark"] .app .sidebar .brand-lockup img {
+  content: url("/business/assets/wordmark-dark.svg");
+}
+.app .sidebar nav a {
+  color: var(--muted);
+  border-radius: 3px;
+  font-weight: 450;
+}
+.app .sidebar nav a.active,
+.app .sidebar nav a:hover {
+  background: var(--green-soft);
+  color: var(--ink);
+}
+.app .sidebar :focus-visible {
+  outline-color: var(--green);
+}
+.app .sidebar .profile,
+.app .sidebar .icon-button,
+.app .sidebar .profile small {
+  color: var(--muted);
+}
+.app .sidebar .avatar {
+  background: var(--green-soft);
+  color: var(--ink);
+}
+.sidebar-tools .search-trigger {
+  color: var(--muted);
+}
+.sidebar-tools kbd {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.explorer-header h1 {
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+.explorer .panel,
+.flow-panel,
+.panel {
+  border-radius: 4px;
+  box-shadow: none;
+}
+.explorer h2 {
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+.flow-metrics strong {
+  font-weight: 500;
+}
+.button,
+.explorer-header select,
+.flow-controls select,
+.flow-switch {
+  border-radius: 3px;
+}
+.preview-brand {
+  background: transparent;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 12px 0 24px;
+}
+.preview-brand strong {
+  font-size: 24px;
+  font-weight: 550;
+}
+
+.preview-shell { display: grid; grid-template-columns: 220px minmax(0,1fr); min-height: 100vh; background: #f8f8f4; color: #173c35; }
+.preview-sidebar { position: sticky; top: 0; height: 100dvh; background: #f1f3ed; border-right: 1px solid #d7dcd4; padding: 26px 14px; display: flex; flex-direction: column; gap: 28px; }
+.preview-logo { display: flex; align-items: baseline; gap: 5px; font-size: 23px; text-decoration: none; color: #173c35; letter-spacing: -.04em; }
+.preview-logo img { width: 90px; align-self: center; }
+.preview-business { display: grid; gap: 4px; padding: 0 10px; font-size: 14px; }
+.preview-business small { color: #53645d; font-size: 11px; }
+.preview-sidebar nav { display: grid; gap: 4px; }
+.preview-sidebar nav button,.preview-sidebar nav a { display: flex; align-items: center; gap: 10px; color: #53645d; font-size: 13px; font-weight: 550; padding: 11px 12px; border: 0; border-radius: 6px; background: transparent; text-decoration: none; text-align: left; }
+.preview-sidebar nav button[aria-current="page"] { background: #174b3d; color: white; }
+.preview-sidebar nav button:hover:not([aria-current="page"]),.preview-sidebar nav a:hover { background: #e5eadd; }
+.preview-signup { display: flex; align-items: center; gap: 10px; margin-top: auto; color: #174b3d; padding: 12px; font-size: 13px; }
+.preview-shell .dashboard-preview { width: 100%; max-width: 1480px; padding: 24px; min-width: 0; }
+.preview-shell .preview-brand { background: transparent; color: #53645d; padding: 0 0 20px; border-radius: 0; border-bottom: 1px solid #d7dcd4; font-size: 12px; }
+.preview-brand > span { margin-right: auto; }
+.preview-brand button { border: 0; color: inherit; background: transparent; font-size: inherit; }
+.preview-shell .explorer-header { margin: 24px 0; }
+.preview-review-strip { display: flex; gap: 16px; align-items: center; padding: 16px 0 24px; font-size: 12px; color: #53645d; flex-wrap: wrap; }
+.preview-review-strip button { color: #174b3d; border: 0; background: transparent; padding: 5px; }
+.preview-review-strip > span:last-child { margin-left: auto; }
+.preview-shell .explorer-lower { grid-template-columns: minmax(0,1fr); }
+.preview-shell .flow-register { font-size: 12px; }
+.preview-row-link { border: 0; background: transparent; color: #174b3d; padding: 0; text-align: left; font-weight: 600; }
+.preview-review { border: 1px solid #d7dcd4; border-radius: 4px; background: #fffef9; color: #53645d; font-size: 11px; padding: 4px 6px; white-space: nowrap; }
+.preview-review[aria-pressed="false"] { color: #964b29; background: #fff3e5; border-color: #ebcfb7; }
+.preview-income { color: #217040; }
+.preview-register-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 16px; }
+.preview-register-tools label { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.preview-register-tools input:not([type="checkbox"]),.preview-register-tools select,.preview-settings input,.preview-detail select { padding: 8px; border: 1px solid #d7dcd4; border-radius: 5px; background: white; color: #173c35; }
+.preview-account-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+.preview-account-grid > button { border: 1px solid #d7dcd4; background: #fffffc; border-radius: 8px; color: #173c35; text-align: left; padding: 24px; }
+.preview-account-grid p,.preview-account-grid small { color: #53645d; font-size: 12px; }
+.preview-account-grid strong { display: block; font-size: 28px; margin: 16px 0; }
+.preview-account-grid small { display: block; }
+.preview-settings { max-width: 600px; padding: 10px 0; }
+.preview-settings label { display: grid; gap: 8px; }
+.preview-settings p { color: #53645d; line-height: 1.6; }
+.preview-settings h2 { margin-top: 32px; }
+.preview-detail { position: fixed; inset: 0; z-index: 50; background: #173c3555; display: grid; place-items: center; padding: 20px; }
+.preview-detail > div { width: min(100%,460px); background: #fffffc; padding: 28px; border-radius: 10px; border: 1px solid #d7dcd4; }
+.preview-close { float: right; border: 0; background: transparent; color: #53645d; }
+.preview-detail label { display: flex; gap: 10px; margin-top: 20px; align-items: center; }
+.preview-detail > div > strong { font-size: 30px; }
+.preview-detail p { font-size: 13px; color: #53645d; }
+@media(max-width:850px) { .preview-shell { display: block; } .preview-sidebar { position: relative; height: auto; padding: 18px; gap: 16px; } .preview-sidebar nav { display: flex; flex-wrap: wrap; } .preview-business,.preview-signup { display: none; } .preview-shell .dashboard-preview { padding: 18px; } }
+@media(max-width:540px) { .preview-account-grid { grid-template-columns: 1fr; } .preview-brand { flex-wrap: wrap; } .preview-review-strip > span:last-child { margin-left: 0; } .preview-sidebar nav button,.preview-sidebar nav a { padding: 8px; font-size: 12px; } }

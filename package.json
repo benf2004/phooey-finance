@@ -18,6 +18,7 @@
     "db:migrate:production": "wrangler d1 migrations apply phooey-finance --remote --env production",
     "hosted:launch": "node scripts/launch-hosted.mjs",
     "hosted:auth": "node scripts/deploy-melody.mjs deploy",
+    "hosted:admin": "node scripts/grant-hosted-admin.mjs",
     "hosted:configure": "node scripts/configure-hosted.mjs"
   },
   "dependencies": {

@@ -16,7 +16,7 @@ import {
   Ban,
   Save,
 } from "lucide-react";
-import { api, allPages, body, downloadBytes } from "./api";
+import { api, allPages, body, downloadBytes, businessHeaders, assetPath } from "./api";
 import {
   BrandingFields,
   LogoField,
@@ -38,6 +38,7 @@ import {
   type Preset,
   type SettingsRecord,
   type Totals,
+  type LabelKey,
 } from "../shared/model";
 
 const PdfViewer = lazy(() => import("./pdf-viewer"));
@@ -59,7 +60,7 @@ async function makePdf(doc: InvoiceDocument, state?: Invoice["status"]) {
   let logo: Uint8Array | undefined;
   if (parsed.branding.logoAssetId) {
     const res = await fetch(
-      invoicePath(`/api/v1/assets/${parsed.branding.logoAssetId}`),
+      invoicePath(`/api/v1/assets/${parsed.branding.logoAssetId}`), { headers: businessHeaders() },
     );
     if (!res.ok) throw new Error("Logo could not be loaded");
     logo = new Uint8Array(await res.arrayBuffer());
@@ -278,6 +279,7 @@ export function Editor({
         : "Complete the required invoice fields to calculate totals.";
   }
   const labels = { ...labelDefaults, ...doc.branding.labels };
+  const label = (key: LabelKey) => <input className={`editable-label label-${key}`} aria-label={`${labelDefaults[key]} label`} maxLength={64} value={labels[key]} onChange={e => update("branding", { ...doc.branding, labels: { ...doc.branding.labels, [key]: e.target.value } })} onBlur={e => { if (!e.target.value.trim()) update("branding", { ...doc.branding, labels: { ...doc.branding.labels, [key]: labelDefaults[key] } }); }} />;
   const format = (n: number) => money(n, doc.currency, doc.locale);
   const back = () => {
     if (
@@ -362,13 +364,13 @@ export function Editor({
                     alt="Business logo"
                     src={
                       doc.branding.logoData ||
-                      invoicePath(`/api/v1/assets/${doc.branding.logoAssetId}`)
+                      assetPath(doc.branding.logoAssetId!)
                     }
                   />
                 ) : (
                   <span />
                 )}
-                <h2>{labels.title}</h2>
+                <h2>{label("title")}</h2>
                 <label className="paper-invoice-number">
                   <span aria-hidden="true">#</span>
                   <input
@@ -455,7 +457,7 @@ export function Editor({
               <div className="paper-top">
                 <div className="paper-parties">
                   <section>
-                    <h3>{labels.billTo}</h3>
+                    <h3>{label("billTo")}</h3>
                     <select
                       aria-label="Choose customer"
                       value=""
@@ -481,7 +483,7 @@ export function Editor({
                   </section>
                   {doc.branding.showShipping && (
                     <section>
-                      <h3>{labels.shipTo}</h3>
+                      <h3>{label("shipTo")}</h3>
                       <PartyFields
                         value={
                           doc.shipTo || {
@@ -499,7 +501,7 @@ export function Editor({
                   )}
                 </div>
                 <div className="paper-meta">
-                  <Field label={labels.date}>
+                  <Field label={label("date")}>
                     <input
                       type="date"
                       aria-label="Invoice date"
@@ -507,7 +509,7 @@ export function Editor({
                       onChange={(e) => update("date", e.target.value)}
                     />
                   </Field>
-                  <Field label={labels.dueDate}>
+                  <Field label={label("dueDate")}>
                     <input
                       type="date"
                       aria-label="Due date"
@@ -517,7 +519,7 @@ export function Editor({
                   </Field>
                   <details className="party-contact">
                     <summary>Reference &amp; terms</summary>
-                    <Field label={labels.paymentTerms}>
+                    <Field label={label("paymentTerms")}>
                       <input
                         aria-label="Payment terms"
                         placeholder="e.g. Net 30"
@@ -525,7 +527,7 @@ export function Editor({
                         onChange={(e) => update("paymentTerms", e.target.value)}
                       />
                     </Field>
-                    <Field label={labels.poNumber}>
+                    <Field label={label("poNumber")}>
                       <input
                         aria-label="PO number"
                         placeholder="Optional"
@@ -538,10 +540,10 @@ export function Editor({
               </div>
               <div className="line-items">
                 <div className="line-head">
-                  <span>{labels.item}</span>
-                  <span>{labels.quantity}</span>
-                  <span>{labels.rate}</span>
-                  <span>{labels.amount}</span>
+                  <span>{label("item")}</span>
+                  <span>{label("quantity")}</span>
+                  <span>{label("rate")}</span>
+                  <span>{label("amount")}</span>
                   <span />
                 </div>
                 {doc.items.map((item, i) => (
@@ -621,7 +623,7 @@ export function Editor({
               <div className="paper-bottom">
                 <div className="paper-notes">
                   {doc.branding.showNotes && (
-                    <Field label={labels.notes}>
+                    <Field label={label("notes")}>
                       <textarea
                         aria-label="Notes"
                         rows={3}
@@ -632,7 +634,7 @@ export function Editor({
                     </Field>
                   )}
                   {doc.branding.showTerms && (
-                    <Field label={labels.terms}>
+                    <Field label={label("terms")}>
                       <textarea
                         aria-label="Terms"
                         rows={3}
@@ -645,7 +647,7 @@ export function Editor({
                 </div>
                 <div className="totals-editor">
                   <div className="total-row">
-                    <span>{labels.subtotal}</span>
+                    <span>{label("subtotal")}</span>
                     <strong>{totals ? format(totals.subtotal) : "—"}</strong>
                   </div>
                   <details
@@ -661,7 +663,7 @@ export function Editor({
                     <summary>Tax, discount &amp; shipping</summary>
                     {(["discount", "tax"] as const).map((key) => (
                       <div className="adjustment-row" key={key}>
-                        <span>{labels[key]}</span>
+                        <span>{label(key)}</span>
                         <div>
                           <input
                             aria-label={labels[key]}
@@ -691,7 +693,7 @@ export function Editor({
                       </div>
                     ))}
                     <div className="adjustment-row">
-                      <span>{labels.shipping}</span>
+                      <span>{label("shipping")}</span>
                       <input
                         inputMode="decimal"
                         aria-label="Shipping charge"
@@ -701,11 +703,11 @@ export function Editor({
                     </div>
                   </details>
                   <div className="total-row">
-                    <span>{labels.total}</span>
+                    <span>{label("total")}</span>
                     <strong>{totals ? format(totals.total) : "—"}</strong>
                   </div>
                   <div className="adjustment-row">
-                    <span>{labels.amountPaid}</span>
+                    <span>{label("amountPaid")}</span>
                     <input
                       inputMode="decimal"
                       aria-label="Amount paid"
@@ -714,7 +716,7 @@ export function Editor({
                     />
                   </div>
                   <div className="total-row balance">
-                    <span>{labels.balanceDue}</span>
+                    <span>{label("balanceDue")}</span>
                     <strong>{totals ? format(totals.balanceDue) : "—"}</strong>
                   </div>
                 </div>

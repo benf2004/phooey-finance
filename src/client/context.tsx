@@ -6,6 +6,7 @@ import type { AppearanceSaveState } from "./appearance-autosave";
 export type Workspace = {
   hosted?: boolean;
   keyAuth?: boolean;
+  mcpUrl?: string;
   accounts: Account[];
   categories: Category[];
   refresh: () => void;

@@ -78,6 +78,9 @@ async function main() {
   }
   if (m.portalOrigin !== market || m.appOrigin !== app)
     throw Error("Unexpected public domains in the launch manifest.");
+  m.invoicerOrigin = "https://invoicer.phooey.foo";
+  m.invoicerMarketingOrigin = "https://getinvoicer.phooey.foo";
+  await writePrivate(resources,m);
   // Validate IDs and origins before using slot identifiers in local filenames or provisioning D1.
   configure();
   const providerDefaults = {
@@ -163,16 +166,8 @@ async function main() {
     run("npm", ["run", "build"]);
     migrate("portal", "CONTROL");
     wrangler(["deploy", "--config", cfg("portal")]);
-    const response = await fetch(market + "/waitlist", {
-      redirect: "error",
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok || !(await response.text()).includes('action="/waitlist"'))
-      throw Error("Published portal needs a waitlist smoke check.");
-    await verifyRedirect(market + "/cloud/start", app + "/cloud/start");
-    console.log(
-      "Promotional site and waitlist are live on getfinance.phooey.foo.",
-    );
+    await verifyRedirect(market + "/cloud/signup", app + "/cloud/signup");
+    console.log("Marketing pages are live on getfinance.phooey.foo.");
     return;
   }
   const p = await read(inputs);
@@ -297,6 +292,7 @@ async function main() {
       "--file",
       join(dir, "register.sql"),
     ]);
+    run(process.execPath, ["scripts/backfill-mcp-routes.mjs", resources, dir]);
   }
   if (mode === "cutover") {
     const portal = await read(cfg("portal"));
@@ -321,11 +317,19 @@ async function main() {
   const landing = await fetch(market + "/", {
     signal: AbortSignal.timeout(15000),
   });
-  if (!landing.ok || !(await landing.text()).includes("phooey! finance"))
-    throw Error("Check the portal landing page.");
+  const landingHtml = await landing.text();
+  if (!landing.ok || !landingHtml.includes(app + "/cloud/signup") || !landingHtml.includes("14-day free trial"))
+    throw Error("Check the free trial signup link on the marketing homepage.");
   await verifyRedirect(market + "/cloud/start", app + "/cloud/start");
   if (m.attachAppDomain) {
     await verifyRedirect(app + "/", market + "/");
+    const signup = await fetch(app + "/cloud/signup", {
+      redirect: "manual", signal: AbortSignal.timeout(15000),
+    });
+    const signupUrl = new URL(signup.headers.get("location") || app, app);
+    if (signupUrl.origin + signupUrl.pathname !== app + "/oauth2/v1/authorize" ||
+        signupUrl.searchParams.get("step") !== "sign_up")
+      throw Error("Check the Finance account creation link.");
     const signIn = await fetch(app + "/cloud/start", {
       redirect: "manual", signal: AbortSignal.timeout(15000),
     });

@@ -1,8 +1,13 @@
 import { invoicePath } from './paths';
 let csrfToken = '';
+let businessId = localStorage.getItem('invoicer-business') || 'default';
+export function setBusiness(value: string) { businessId = value; localStorage.setItem('invoicer-business', value); }
+export function assetPath(id: string) { return invoicePath(`/api/v1/assets/${id}?business=${encodeURIComponent(businessId)}`); }
+export function businessHeaders() { return { 'X-Business-Id': businessId }; }
 export function setCsrf(value: string) { csrfToken = value; }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
+  headers.set("X-Business-Id", businessId);
   if (options.body && typeof options.body === 'string') headers.set('Content-Type', 'application/json');
   if (!['GET', 'HEAD'].includes(options.method || 'GET')) headers.set('X-CSRF-Token', csrfToken);
   const response = await fetch(invoicePath(path.startsWith('/auth') ? path : `/api/v1${path}`), { ...options, credentials: 'same-origin', headers });

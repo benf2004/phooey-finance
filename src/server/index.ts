@@ -38,6 +38,7 @@ import {
   connectSimplefin,
   requestSync,
   syncWindow,
+  syncJobProgress,
   claimJob,
   simplefinState,
   discoverSimplefinAccounts,
@@ -129,6 +130,7 @@ app.get("/api/session", async (c) =>
     username: c.env.ADMIN_USERNAME || "Admin",
     keyAuth: !!c.env.ADMIN_KEY,
     invoicerUrl: c.env.invoicerUrl,
+    mcpUrl: c.env.mcpUrl,
     hosted: !!c.env.hostedCustomer,
     ...(await readAccountPreferences(c.env.DB)),
     sourceUrl: c.env.SOURCE_URL,
@@ -420,9 +422,13 @@ app.get("/api/sync", async (c) =>
     connection: await simplefinState(c.env),
     jobs: (
       await c.env.DB.prepare(
-        "SELECT id,kind,status,progress,error,created_at,updated_at FROM jobs ORDER BY created_at DESC LIMIT 20",
-      ).all()
-    ).results,
+        "SELECT id,kind,status,progress,error,created_at,updated_at,payload FROM jobs ORDER BY status IN ('queued','running') DESC,created_at DESC,rowid DESC LIMIT 20",
+      ).all<{ id: string; kind: string; status: string; progress: string; error: string | null; created_at: string; updated_at: string; payload: string }>()
+    ).results.map(({ payload, ...job }) => ({
+      ...job,
+      syncProgress: job.kind === "sync" && JSON.parse(payload).cursor !== undefined
+        ? syncJobProgress(JSON.parse(payload), job.status) : null,
+    })),
   }),
 );
 app.post("/api/sync/connect", async (c) => {
@@ -708,7 +714,7 @@ export default {
   },
   async scheduled(_event: ScheduledController, env: AppEnv) {
     const connected = await env.DB.prepare(
-      "SELECT id FROM connections WHERE selection_ready=1 AND json_array_length(selected_accounts)>0 LIMIT 1",
+      "SELECT id FROM connections WHERE selection_ready=1 AND json_array_length(selected_accounts)>0 AND (initial_sync_start IS NOT NULL OR last_success IS NOT NULL OR resume_from IS NOT NULL) LIMIT 1",
     ).first();
     const recovery = (
       await env.DB.prepare(

@@ -173,6 +173,7 @@ function App() {
       hosted?: boolean;
       keyAuth?: boolean;
       invoicerUrl?: string;
+      mcpUrl?: string;
       username: string;
       displayName: string;
       transactionAppearance: TransactionAppearance;
@@ -307,6 +308,7 @@ function App() {
       value={{
         hosted: session.hosted,
         keyAuth: session.keyAuth,
+        mcpUrl: session.mcpUrl,
         accounts,
         categories,
         version,

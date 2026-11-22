@@ -17,12 +17,12 @@ export function TransactionGrid({rows,tagsOnly,onSaved}: {rows:Transaction[];tag
     const url="/transactions/"+row.id;
     try {
       const full=await api<Transaction & {splits:TransactionInput["splits"]}>(url);
-      if(full.revision!==row.revision) throw Error("This transaction changed. Cancel and reopen the cell to see the latest value.");
+      if(full.revision!==row.revision) throw Error("This transaction changed. Press Esc and reopen the cell to see the latest value.");
       await submit(url,{transaction:{...full,reviewed:!!full.reviewed,pending:!!full.pending,...changes},revision:row.revision},"PUT");
     } finally {refresh();}
   }
   const cols:GridColumn<Transaction>[] = [
-    {key:"posted",title:"Date",value:r=>r.posted,save:(r,v)=>editDetails(r,{posted:v}),locked:r=>!!r.transfer_id},
+    {key:"posted",title:"Date",type:"date",value:r=>r.posted,save:(r,v)=>editDetails(r,{posted:v}),locked:r=>!!r.transfer_id},
     {key:"description",title:"Description",value:r=>r.description,save:(r,v)=>patch(r,{field:"description",value:v})},
     {key:"tags",title:"Tags",value:r=>JSON.stringify(r.tags),display:r=>r.tags.length ? <span className="grid-chips">{r.tags.map(t=><span key={t}>{t}</span>)}</span> : "Add tags",type:"tags",save:(r,v)=>patch(r,{field:"tags",value:JSON.parse(v)})},
     {key:"account",title:"Account",value:r=>r.account_name},
