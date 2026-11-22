@@ -233,7 +233,7 @@ function App() {
               )}
             </main>
             <footer className="suite-footer">
-              <a href={invoicePath("/source.tar.gz")}>Source · AGPL-3.0</a>
+              <a href="https://github.com/benf2004/phooey-finance" target="_blank" rel="noreferrer">GitHub · AGPL-3.0</a>
             </footer>
           </div>
         </div>
@@ -284,7 +284,8 @@ function Login({ onLogin }: { onLogin: (csrf: string) => void }) {
           <img src={invoicePath("/phooey-wordmark.svg")} alt="phooey!" />{" "}
           invoicer
         </div>
-        <h1>Open your workspace</h1>
+        <h1>A little less paperwork.</h1>
+        <p>Sign in to create invoices, follow up on payments, and keep your business moving.</p>
         <label className="field">
           <span>Admin key</span>
           <input
@@ -304,7 +305,7 @@ function Login({ onLogin }: { onLogin: (csrf: string) => void }) {
           {busy ? "Signing in…" : "Sign in"}
           <ArrowRight size={17} />
         </button>
-        <a href={invoicePath("/source.tar.gz")}>Download source</a>
+        <a href="https://github.com/benf2004/phooey-finance" target="_blank" rel="noreferrer">View source on GitHub</a>
       </form>
     </main>
   );

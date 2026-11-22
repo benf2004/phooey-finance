@@ -651,3 +651,269 @@ summary {
     scroll-behavior: auto !important;
   }
 }
+
+/* Shared Phooey type and structure, with a warm clay accent for Invoicer. */
+@font-face {
+  font-family: "DM Sans";
+  src: url("/fonts/dm-sans-latin.woff2") format("woff2");
+  font-weight: 100 1000;
+  font-display: swap;
+}
+:root {
+  font-family: "DM Sans", Helvetica, Arial, sans-serif;
+  color: #302e27;
+  background: #f6f5ef;
+  --accent: #85513b;
+  --muted: #68675e;
+  --border: #dad8cd;
+  --radius: 4px;
+  --shadow: none;
+}
+body {
+  background: #f6f5ef;
+}
+::selection {
+  background: #ead3bd;
+  color: #302e27;
+}
+.suite-nav {
+  background: #f6f5ef;
+  color: #302e27;
+  border-bottom: 1px solid var(--border);
+  min-height: 80px;
+  gap: 36px;
+}
+.suite-brand {
+  font-size: 25px;
+  font-weight: 450;
+  color: #302e27;
+}
+.suite-brand img {
+  width: 100px;
+}
+.suite-nav nav a {
+  color: #68675e;
+  font-size: 14px;
+  font-weight: 450;
+  border-bottom-width: 2px;
+}
+.suite-nav nav a:hover,
+.suite-nav nav a[aria-current="page"] {
+  color: #302e27;
+  border-color: #a36a4d;
+}
+.suite-nav .logout,
+.suite-menu {
+  color: #68675e;
+}
+.invoice-main main {
+  padding-top: 36px;
+  padding-bottom: 40px;
+}
+.invoice-main h1 {
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  color: #302e27;
+}
+.invoice-main h2 {
+  color: #302e27;
+  font-weight: 550;
+}
+.invoice-main p,
+.invoice-main .muted {
+  color: var(--muted);
+}
+.invoice-main .button,
+.invoice-login .button {
+  border-radius: 3px;
+  min-height: 44px;
+  box-shadow: none;
+  font-weight: 500;
+}
+.invoice-main :is(.button.primary, .tabs button.active),
+.invoice-login .button.primary {
+  background: #85513b;
+  border-color: #85513b;
+  color: white;
+}
+.invoice-main .button.primary:hover,
+.invoice-login .button.primary:hover {
+  background: #6e402c;
+}
+.invoice-main .button:hover {
+  border-color: #9d8c78;
+}
+.invoice-main :is(.text-button, .invoice-link, .back-link) {
+  color: #85513b;
+}
+.invoice-main .stat-grid {
+  border-inline: 0;
+  border-radius: 0;
+  background: transparent;
+  margin-bottom: 28px;
+}
+.invoice-main .stat-card {
+  background: transparent;
+  padding-block: 24px;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+}
+.invoice-main .stat-card > span {
+  max-width: none;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+.invoice-main .stat-card strong {
+  color: #302e27;
+  font-size: clamp(24px, 2.5vw, 32px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+.invoice-main .stat-card .stat-money {
+  font-size: clamp(20px, 2vw, 28px);
+}
+.invoice-main .page-heading > .button {
+  margin-top: 0;
+}
+.invoice-main .empty-state {
+  padding-block: 48px;
+}
+.invoice-main .empty-state p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.invoice-main .stat-icon {
+  background: #eee6da;
+  color: #85513b;
+  border-radius: 3px;
+}
+.invoice-main .stat-value {
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.invoice-main .panel,
+.invoice-main .setup-banner {
+  border-radius: 4px;
+  background: #fffef9;
+}
+.invoice-main .setup-icon,
+.invoice-main .tabs {
+  background: #eee9df;
+  color: #85513b;
+  border-radius: 3px;
+}
+.invoice-main .tabs button {
+  border-radius: 3px;
+}
+.invoice-main input,
+.invoice-main select,
+.invoice-main textarea {
+  border-radius: 3px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #85513b;
+  box-shadow: 0 0 0 2px #ead3bd;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline-color: #85513b;
+}
+.editor-heading h1 {
+  font-size: 24px;
+}
+.invoice-paper,
+.invoice-paper.modern {
+  border-radius: 3px;
+}
+
+.invoice-login {
+  padding: 40px 24px;
+  align-items: start;
+}
+.invoice-login .login-form {
+  width: min(100%, 400px);
+  margin-top: clamp(28px, 8vh, 90px);
+  gap: 20px;
+  font-size: 15px;
+}
+.login-wordmark {
+  background: transparent;
+  color: #302e27;
+  border-radius: 0;
+  padding: 0 0 24px;
+  border-bottom: 1px solid var(--border);
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+.invoice-login h1 {
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+  margin: 0;
+}
+.invoice-login p {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0;
+}
+.invoice-login .field {
+  margin: 4px 0 0;
+}
+.invoice-login .field > span {
+  font-size: 14px;
+  color: #302e27;
+}
+.invoice-login input {
+  min-height: 48px;
+  border-radius: 3px;
+  border-color: #a8a99c;
+}
+.invoice-login a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+@media (max-width: 900px) {
+  .suite-nav {
+    gap: 12px;
+    min-height: 72px;
+  }
+}
+@media (max-width: 720px) {
+  .invoice-main main {
+    padding: 24px 16px;
+  }
+  .invoice-main .stat-card {
+    padding: 18px 12px;
+  }
+  .invoice-main .stat-card + .stat-card {
+    border-left: 1px solid var(--border);
+  }
+  .invoice-main .stat-grid {
+    border: 1px solid var(--border);
+  }
+  .invoice-login .login-form {
+    margin-top: 24px;
+  }
+}
+@media (max-width: 480px) {
+  .invoice-main .stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .invoice-main .stat-card + .stat-card {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
