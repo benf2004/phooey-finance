@@ -1,4 +1,4 @@
-import { invoicePath, currentPath, bundled } from "./paths";
+import { invoicePath, currentPath, bundled, financeUrl } from "./paths";
 import { StrictMode, useEffect, useRef, useState, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -181,7 +181,7 @@ function App() {
               className={mobileMenu ? "open" : ""}
               aria-label="Workspace"
             >
-              <a href="https://finance.phooey.foo/">Finance <ArrowRight size={15} /></a>
+              {financeUrl && <a href={financeUrl} onClick={e => { if (!canLeaveDraft()) e.preventDefault(); }}>Finance <ArrowRight size={15} /></a>}
               {nav.map((n) => (
                 <a
                   key={n.path}

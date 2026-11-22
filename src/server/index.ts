@@ -276,9 +276,16 @@ app.patch("/api/transactions/:id", async (c) => {
   const { edit, revision } = z
     .object({ edit: transactionFieldSchema, revision: z.number().int() })
     .parse(await readJSON(c.req.raw));
-  return c.json(await c.get("ledger").editTransactionField(
-    c.req.param("id"), edit, revision, c.req.header("Idempotency-Key"),
-  ));
+  return c.json(
+    await c
+      .get("ledger")
+      .editTransactionField(
+        c.req.param("id"),
+        edit,
+        revision,
+        c.req.header("Idempotency-Key"),
+      ),
+  );
 });
 app.delete("/api/transactions/:id", async (c) => {
   const data = z

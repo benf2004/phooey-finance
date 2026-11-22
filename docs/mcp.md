@@ -2,6 +2,8 @@
 
 Hosted endpoint: `https://finance.phooey.foo/mcp`. Transport: Streamable HTTP. Self-hosted installations use `https://YOUR-WORKER.workers.dev/mcp`. The dashboard Settings page shows the exact URL.
 
+Self-hosted installations also accept `Authorization: Bearer ADMIN_KEY` for full owner access to MCP. The [combined Finance + Invoicer edition](self-hosted.md) accepts that same key at `/invoicer/mcp`. Rotating `ADMIN_KEY` revokes old owner-key access immediately. Scoped tokens and OAuth remain optional, so integrations can use narrower permissions. The admin bearer key does not replace browser-session authentication for Finance's dashboard-only API routes.
+
 The hosted endpoint routes OAuth and personal access tokens to the owner's workspace without a browser session. Existing workspace URLs remain available for connected clients. When deploying the shared endpoint, apply hosted migration `0007_mcp_routing.sql` and run `node scripts/backfill-mcp-routes.mjs .private/launch/resources.json .private/launch` to index existing token hashes before deploying the gateway.
 
 For the current beta workspace, deploy in this order. Updating the workspace before backfilling also indexes tokens created during the rollout. The regular `hosted:launch deploy` workflow performs the backfill automatically.

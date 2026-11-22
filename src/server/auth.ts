@@ -58,6 +58,11 @@ async function credentials(env: AppEnv) {
 export async function credentialVersion(env: AppEnv) {
   return env.ADMIN_KEY ? hash("admin-key:" + env.ADMIN_KEY) : (await credentials(env)).version;
 }
+async function adminKeyMatches(provided: string, expected: string) {
+  const digest = (value: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  const [entered, configured] = await Promise.all([digest(provided), digest(expected)]);
+  return timingSafeEqual(new Uint8Array(entered), new Uint8Array(configured));
+}
 export async function login(
   env: AppEnv,
   username: string,
@@ -67,9 +72,7 @@ export async function login(
   if (env.ADMIN_KEY) {
     assert(env.ADMIN_KEY.length >= 32, 503, "Configure an admin key of at least 32 characters.");
     await rateLimit(env.DB, "login:" + ip, 10, 900);
-    const digest = (value: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-    const [entered, expected] = await Promise.all([digest(password), digest(env.ADMIN_KEY)]);
-    assert(timingSafeEqual(new Uint8Array(entered), new Uint8Array(expected)), 401, "Incorrect admin key.");
+    assert(await adminKeyMatches(password, env.ADMIN_KEY), 401, "Incorrect admin key.");
     return createSession(env, await credentialVersion(env));
   }
   assert(
@@ -161,6 +164,15 @@ export async function authenticate(
 ): Promise<Principal | null> {
   const bearer = request.headers.get("authorization");
   if (!sessionOnly && bearer?.startsWith("Bearer ")) {
+    // A self-hosted owner can connect MCP with the same admin credential.
+    // Dashboard-only routes still require a browser session; scoped integration
+    // tokens below keep their existing permissions and revocation behavior.
+    if (env.ADMIN_KEY && env.ADMIN_KEY.length >= 32 && await adminKeyMatches(bearer.slice(7), env.ADMIN_KEY)) {
+      return {
+        actor: "admin-key", kind: "token",
+        scopes: ["finance:read", "transactions:write", "rules:write", "tax:write", "sync:write"],
+      };
+    }
     const row = await env.DB.prepare(
       "SELECT id,scopes FROM access_tokens WHERE token_hash=? AND expires_at>?",
     )

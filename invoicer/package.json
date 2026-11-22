@@ -8,6 +8,7 @@
     "dev": "npm run build && wrangler dev",
     "dev:ui": "vite --host 127.0.0.1",
     "build": "vite build && node scripts/bundle-source.mjs",
+    "build:bundled": "vite build --base=/invoicer/ --outDir=../dist/client/invoicer --emptyOutDir && node scripts/bundle-source.mjs ../dist/client/invoicer",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types --env-interface CloudflareBindings",
     "test": "vitest run",

@@ -1,8 +1,8 @@
 # phooey! finance
 
-[Deploy the hosted Finance + Invoicer bundle on Cloudflare](docs/cloudflare-quickstart.md)
+[Self-host Finance + Invoicer with one admin key](docs/self-hosted.md) · [Deploy the commercial hosted edition](docs/cloudflare-quickstart.md)
 
-A bookkeeping and invoicing workspace for solopreneurs. The Cloudflare-hosted edition pairs Finance and Invoicer for $29/year with separate optional SimpleFIN Bridge syncing. The AGPL self-hosted editions support one admin key each. Built with React, TypeScript, Hono and Cloudflare Workers, D1, R2 and Queues. No spreadsheet dependency, analytics, or AI service required.
+A bookkeeping and invoicing workspace for solopreneurs. The self-hosted bundle includes the same Finance and Invoicer web application features with one admin key and a shared sign-in. The commercial hosted edition adds managed accounts and billing for $29/year. SimpleFIN Bridge syncing is optional and billed separately. Built with React, TypeScript, Hono and Cloudflare Workers, D1, R2 and Queues. No spreadsheet dependency, analytics, or AI service required.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/benf2004/phooey-finance)
 
@@ -19,6 +19,20 @@ Follow the [deployment steps](#deploy-to-cloudflare) to configure resources, sec
 ## Run locally
 
 Use Node 24.11+ (the repository includes `.nvmrc`).
+
+For **Finance and Invoicer together**:
+
+```sh
+npm ci
+npm --prefix invoicer ci
+npm run setup:local
+npm run migrate:self-hosted:local
+npm run dev:self-hosted
+```
+
+Sign in with `ADMIN_KEY` from `.dev.vars`, then open Invoicer from the sidebar. Both apps run on the printed local URL, with Invoicer at `/invoicer/`. See the [self-hosting guide](docs/self-hosted.md) for deployment and upgrades.
+
+For Finance on its own with frontend hot reload:
 
 ```sh
 npm ci
@@ -77,7 +91,8 @@ See [architecture](docs/architecture.md), [CSV import formats](docs/csv-import.m
 ## Verify and develop
 
 ```sh
-npm run check        # typecheck, build current Worker, then all tests
+npm --prefix invoicer ci # install Invoicer dependencies before the full check
+npm run check        # typecheck and build both editions, then both test suites
 node tests/password-ui.mjs # after build: isolated password/browser flow (Chromium or macOS Chrome)
 npm run cf:types     # regenerate Cloudflare bindings after config changes
 npm audit

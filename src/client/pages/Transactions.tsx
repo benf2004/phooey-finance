@@ -564,6 +564,7 @@ export default function Transactions() {
     refresh();
   }
   const items = data.data?.items ?? [];
+  const selectedItems = items.filter((item) => selected.has(item.id));
   const categoryColors = new Map(categories.map((c) => [c.id, c.color]));
   return (
     <>
@@ -782,9 +783,9 @@ export default function Transactions() {
           ))}
         </div>
       )}
-      {selected.size > 0 && (
+      {selectedItems.length > 0 && (
         <div className="review-banner">
-          <span>{selected.size} selected</span>
+          <span>{selectedItems.length} selected</span>
           <select
             style={{ width: 190 }}
             value={bulk}
@@ -803,9 +804,7 @@ export default function Transactions() {
             onClick={async () => {
               try {
                 await post("/bulk-category", {
-                  items: items
-                    .filter((t) => selected.has(t.id))
-                    .map((t) => ({ id: t.id, revision: t.revision })),
+                  items: selectedItems.map((t) => ({ id: t.id, revision: t.revision })),
                   category_id: bulk,
                 });
                 setSelected(new Set());
@@ -818,12 +817,12 @@ export default function Transactions() {
           >
             Apply
           </Button>
-          {selected.size === 2 && (
+          {selectedItems.length === 2 && (
             <Button
               variant="secondary"
               onClick={async () => {
                 try {
-                  const [first, second] = [...selected];
+                  const [first, second] = selectedItems.map((item) => item.id);
                   await post("/transfers", { first, second });
                   setSelected(new Set());
                   refresh();
@@ -854,7 +853,7 @@ export default function Transactions() {
                       <input
                         type="checkbox"
                         aria-label="Select all visible transactions"
-                        checked={selected.size === items.length}
+                        checked={selectedItems.length === items.length}
                         onChange={(e) =>
                           setSelected(
                             e.target.checked
@@ -915,14 +914,14 @@ export default function Transactions() {
                       </td>
                       <td className="transaction-description">
                         <TransactionField transaction={t} field="description" onSaved={fieldSaved}>
-                        <button
-                          type="button"
-                          className="transaction-name"
-                          aria-haspopup="dialog"
-                          onClick={() => openEditor(t.id)}
-                        >
-                          {t.description}
-                        </button>
+                          <button
+                            type="button"
+                            className="transaction-name"
+                            aria-haspopup="dialog"
+                            onClick={() => openEditor(t.id)}
+                          >
+                            {t.description}
+                          </button>
                         </TransactionField>
                         <div
                           className={`transaction-meta transaction-tag-list ${

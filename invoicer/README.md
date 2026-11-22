@@ -1,6 +1,8 @@
 # Invoicer
 
-A small, open-source invoice workspace for one business, hosted entirely on your own Cloudflare account. Create branded invoices in the dashboard or generate PDFs on demand through a REST API.
+A small, open-source invoice workspace for your businesses, hosted entirely on your own Cloudflare account. Create branded invoices in the dashboard or generate PDFs on demand through a REST API. The self-hosted version uses the same editor, features, REST API and MCP server as the hosted edition, with one admin key.
+
+To run Finance and Invoicer together with a shared admin-key sign-in, follow the [combined self-hosting guide](../docs/self-hosted.md). The instructions below deploy Invoicer independently.
 
 **Multiple businesses, editable invoices, and business-scoped API keys on Cloudflare Workers + D1.** AGPL-3.0-only licensed; bundled fonts have their own OFL license.
 
@@ -13,7 +15,7 @@ A small, open-source invoice workspace for one business, hosted entirely on your
 - Optional, revocable customer links for viewing, printing and downloading. A new link invalidates the previous link; archiving revokes links permanently.
 - Bearer-authenticated REST API with OpenAPI 3.1, creation idempotency, revision checks and an entirely stateless PDF endpoint.
 
-Payments, email delivery, reminders, accounting reports, receipt documents, freeform layout design, multiple businesses/users and MCP are outside this version.
+Payment processing, email delivery, reminders, receipt documents, freeform layout design and multiple user accounts are outside this version. Manual payment recording, multiple businesses and MCP are included. Finance provides bookkeeping and accounting reports in the combined deployment.
 
 ## Local development
 

@@ -3,7 +3,7 @@ import { createMiddleware } from 'hono/factory';
 import { getCookie } from 'hono/cookie';
 import { AppError } from '../shared/model';
 import { sha, sameOrigin } from './http';
-export type Env = CloudflareBindings & { ADMIN_KEY?: string; BUNDLE_PREFIX?: string; KEY_NAMESPACE?: string; PUBLIC_ORIGIN?: string };
+export type Env = { DB: D1Database; ASSETS: Fetcher; ADMIN_KEY?: string; BUNDLE_PREFIX?: string; APP_PREFIX?: string; KEY_NAMESPACE?: string; PUBLIC_ORIGIN?: string };
 export type AppEnv = { Bindings: Env; Variables: { csrf: string; sessionHash: string; businessId: string; keyScope: string; admin: boolean } };
 export function requireKey(env: Env) {
   if (!env.ADMIN_KEY || env.ADMIN_KEY.length < 32) throw new AppError(503, 'not_configured', 'Set the ADMIN_KEY Worker secret to a random key of at least 32 characters.');

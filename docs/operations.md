@@ -1,5 +1,7 @@
 # Operations and recovery
 
+For admin-key installations, recover access by replacing `ADMIN_KEY` using `wrangler secret put ADMIN_KEY` with the appropriate deployment configuration. The combined edition uses `--config wrangler.self-hosted.jsonc`; one rotation invalidates browser access to both apps. Keep `ENCRYPTION_KEY` unchanged so existing bank connections remain readable. Revoke integration keys separately. Password-recovery instructions below apply only to legacy username/password installations.
+
 ## Imports and exports
 
 Preview CSV mapping before import. Duplicate candidates are highlighted rather than automatically discarded: identical transactions can be legitimate. Submitted rows retain import-specific idempotency keys. If a job fails, use Retry in Settings, or submit the identical file/mapping/skipped rows again to resume. Completed imports are recognized and not reinserted.
