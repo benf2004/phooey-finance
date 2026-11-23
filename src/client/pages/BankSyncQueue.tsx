@@ -12,6 +12,8 @@ export type SyncJob = {
   syncProgress: {
     from: string;
     to: string;
+    transactionsFrom?: string | null;
+    transactionsTo?: string | null;
     totalWindows: number;
     completedWindows: number;
     recordsProcessed: number;
@@ -77,8 +79,24 @@ export function BankSyncQueue({
               {progress && (
                 <>
                   <p className="muted">
-                    {progress.from} → {progress.to}
+                    Requested: {progress.from} → {progress.to}
                   </p>
+                  {progress.transactionsFrom && progress.transactionsTo && (
+                    <p className="muted">
+                      Posted transactions returned: {progress.transactionsFrom}{" "}
+                      → {progress.transactionsTo}
+                    </p>
+                  )}
+                  {job.status === "complete" && (
+                    <p className="muted">
+                      {progress.recordsProcessed === 0
+                        ? "No transactions were returned for the requested dates. "
+                        : ""}
+                      History availability varies by bank. If older transactions
+                      are missing, import a bank CSV in Settings → Import
+                      transactions.
+                    </p>
+                  )}
                   <progress
                     aria-label="Bank sync progress"
                     max={100}

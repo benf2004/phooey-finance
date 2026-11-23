@@ -3,7 +3,7 @@ import type { HostedEnv } from "./control";
 
 export function publicInvoiceRead(req: Request, path: string) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
-  return /^\/invoicer\/(?:s\/[a-zA-Z0-9_-]+(?:\/(?:pdf|info))?|assets\/[\w.-]+|fonts\/[\w.-]+|source\.tar\.gz|LICENSE\.txt)$/.test(
+  return /^\/invoicer\/(?:assets\/[\w.-]+|fonts\/[\w.-]+|source\.tar\.gz|LICENSE\.txt)$/.test(
     path,
   );
 

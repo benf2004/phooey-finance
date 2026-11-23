@@ -15,7 +15,7 @@ export function page(
   layout: "account" | "security" = "account",
 ) {
   return new Response(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · phooey! finance</title><link rel="stylesheet" href="/business/brand.css"><body class="account-page${layout === "security" ? " security-page" : ""}"><header><a href="/business/"><img src="/business/assets/wordmark.svg" alt="phooey! finance"></a>${layout === "security" ? '<a class="account-back" href="/cloud/account">Back to account <span aria-hidden="true">↗</span></a>' : ""}</header><main class="account-main"><h1>${escape(title)}</h1>${content}</main></body></html>`,
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · phooey! finance</title><link rel="stylesheet" href="/business/brand.css"><body class="account-page${layout === "security" ? " security-page" : ""}"><header><a class="finance-wordmark" href="/business/"><img src="/business/assets/phooey.svg" alt="phooey!"> finance</a>${layout === "security" ? '<a class="account-back" href="/cloud/account">Back to account <span aria-hidden="true">↗</span></a>' : ""}</header><main class="account-main"><h1>${escape(title)}</h1>${content}</main></body></html>`,
     {
       status,
       headers: {

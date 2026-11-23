@@ -1,3 +1,4 @@
+import { apiExamplesHtml } from '../shared/api-examples';
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
@@ -56,7 +57,7 @@ app.post('/auth/logout', async c => {
 });
 app.get('/api/v1/openapi.json', c => c.json(openapi));
 app.get('/api/v1', c => c.redirect('/api/v1/docs'));
-app.get('/api/v1/docs', c => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Invoicer API</title><style>body{font:16px system-ui;max-width:850px;margin:60px auto;padding:24px;color:#233047;line-height:1.6}pre{background:#f4f6fa;padding:20px;overflow:auto;border-radius:12px}a{color:#5367df}code{font-family:monospace}h2{margin-top:35px}</style></head><body><h1>Invoicer REST API</h1><p>Your businesses, invoices, and integrations.</p><p><a href="/api/v1/openapi.json">Download the OpenAPI 3.1 specification</a> · <a href="/">Open dashboard</a></p><h2>Authentication</h2><p>Send <code>Authorization: Bearer YOUR_API_KEY</code>. All data endpoints require this header or an authenticated dashboard session. Cookie mutations also require a same-origin request and <code>X-CSRF-Token</code>.</p><h2>Generate a PDF without saving</h2><pre>curl "$INVOICER_URL/api/v1/render" \\\n  -H "Authorization: Bearer $INVOICER_API_KEY" \\\n  -H 'Content-Type: application/json' \\\n  --data '{"billTo":{"name":"Acme Ltd"},"items":[{"description":"Design services","quantity":"2.5","rate":"120"}]}' \\\n  --output invoice.pdf</pre><h2>Save an invoice</h2><p>Use <code>POST /api/v1/invoices</code> with the same data. Add <code>"status":"issued"</code> to issue immediately. Business and customer names are required to issue. Defaults come from business settings and the default preset. Use <code>Idempotency-Key</code> to safely retry creation.</p><h2>Update and lifecycle actions</h2><p>Every saved record has a <code>revision</code>. Include it in updates and invoice actions. Stale requests return 409. Only drafts allow content edits; issued invoices allow payment changes, voiding, sharing, archiving and restoration.</p><p><code>POST /invoices/{id}/issue</code>, <code>/duplicate</code>, <code>/payment</code>, <code>/void</code>, <code>/archive</code>, <code>/restore</code> and <code>/share</code> accept a revision. Payment also accepts decimal-string <code>amountPaid</code>. <code>DELETE /invoices/{id}/share</code> revokes a link. Links grant read access to anyone holding them.</p><h2>Limits and totals</h2><p>JSON requests: 1 MiB. Logos: PNG/JPEG, 256 KiB, at most 2048 × 2048. Invoices: 200 lines. Monetary inputs and quantities are non-negative decimal strings with up to six decimal places. Totals are returned in currency minor units. Each line rounds half-up, followed by discount, tax on the discounted subtotal, shipping, and amount paid. Overpayment is rejected.</p><h2>Lists and errors</h2><p>Lists accept <code>page</code> and <code>limit</code> (maximum 100). Invoices additionally accept <code>q</code>, <code>status</code>, and <code>archived=true</code>. Errors use <code>{"error":{"code":"…","message":"…","details":[]}}</code>. See the specification for all payloads.</p></body></html>`));
+app.get('/api/v1/docs', c => c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Invoicer API</title><style>body{font:16px system-ui;max-width:850px;margin:60px auto;padding:24px;color:#233047;line-height:1.6}pre{background:#f4f6fa;padding:20px;overflow:auto;border-radius:12px}a{color:#5367df}code{font-family:monospace}h2{margin-top:35px}details{margin:16px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible{outline:2px solid currentColor;outline-offset:4px}</style></head><body><h1>Invoicer REST API</h1><p>Your businesses, invoices, and integrations.</p><p><a href="${c.env.APP_PREFIX || ''}/api/v1/openapi.json">Download the OpenAPI 3.1 specification</a> · <a href="${c.env.APP_PREFIX || ''}/">Open dashboard</a></p><h2>Authentication</h2><p>Send <code>Authorization: Bearer YOUR_API_KEY</code>. All data endpoints require this header or an authenticated dashboard session. Cookie mutations also require a same-origin request and <code>X-CSRF-Token</code>.</p><h2>Examples</h2><p>Set <code>INVOICER_URL</code> to your app URL (for example, <code>https://invoicer.phooey.foo</code>) and <code>INVOICER_API_KEY</code> to a read-and-write business key from <strong>API &amp; MCP</strong>. Run these examples locally or on your server; keep keys out of browser code.</p><h2>Generate a PDF without saving</h2><p>Downloads <code>invoice.pdf</code> without creating an invoice or allocating a number.</p>${apiExamplesHtml('render')}<h2>Save an invoice</h2><p>Use <code>POST /api/v1/invoices</code> with the same data. Add <code>"status":"issued"</code> to issue immediately. Business and customer names are required to issue. Defaults come from business settings and the default preset. Use <code>Idempotency-Key</code> to safely retry creation.</p><p>These examples create a draft. Set <code>INVOICER_IDEMPOTENCY_KEY</code> to a unique value for this invoice, such as <code>order-1042-invoice</code>. Reuse it for retries with the same payload; use a new value for each new invoice.</p>${apiExamplesHtml('save')}<h2>Update and lifecycle actions</h2><p>Every saved record has a <code>revision</code>. Include it in updates and invoice actions. Stale requests return 409. Only drafts allow content edits; issued invoices allow payment changes, voiding, archiving and restoration.</p><p><code>POST /invoices/{id}/issue</code>, <code>/duplicate</code>, <code>/payment</code>, <code>/void</code>, <code>/archive</code> and <code>/restore</code> accept a revision. Payment also accepts decimal-string <code>amountPaid</code>.</p><h2>Limits and totals</h2><p>JSON requests: 1 MiB. Logos: PNG/JPEG, 256 KiB, at most 2048 × 2048. Invoices: 200 lines. Monetary inputs and quantities are non-negative decimal strings with up to six decimal places. Totals are returned in currency minor units. Each line rounds half-up, followed by discount, tax on the discounted subtotal, shipping, and amount paid. Overpayment is rejected.</p><h2>Lists and errors</h2><p>Lists accept <code>page</code> and <code>limit</code> (maximum 100). Invoices additionally accept <code>q</code>, <code>status</code>, and <code>archived=true</code>. Errors use <code>{"error":{"code":"…","message":"…","details":[]}}</code>. See the specification for all payloads.</p></body></html>`));
 app.use('/api/v1/*', authenticate);
 app.use('/api/v1/*', async (c, next) => {
   const businessId = c.get('businessId');
@@ -148,16 +149,6 @@ app.post('/api/v1/invoices/:id/:action', async c => {
   }
   if (current.archivedAt && action !== 'restore') throw new AppError(409, 'archived_invoice', 'Restore this invoice first');
   const update = (set: string, condition = '', values: (string | number | null)[] = []) => c.env.DB.prepare(`UPDATE invoices SET ${set}, revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND revision = ? ${condition}`).bind(...values, id, revision);
-  if (action === 'share') {
-    if (current.status === 'draft') throw new AppError(409, 'draft_share', 'Issue the invoice before sharing');
-    const raw = token();
-    const results = await c.env.DB.batch([
-      c.env.DB.prepare("INSERT INTO shares (invoice_id, token_hash) SELECT id, ? FROM invoices WHERE id = ? AND revision = ? AND state != 'draft' AND archived_at IS NULL ON CONFLICT(invoice_id) DO UPDATE SET token_hash = excluded.token_hash").bind(await sha(raw), id, revision),
-      update('state = state', "AND state != 'draft' AND archived_at IS NULL"),
-    ]);
-    checkChange(results[1]);
-    return c.json({ url: `${c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin}${c.env.BUNDLE_PREFIX || ''}/s/${raw}`, invoice: await getInvoice(c.env.DB, id, c.get('businessId')) });
-  }
   if (action === 'archive') {
     const results = await c.env.DB.batch([c.env.DB.prepare('DELETE FROM shares WHERE invoice_id = ? AND EXISTS (SELECT 1 FROM invoices WHERE id = ? AND revision = ? AND archived_at IS NULL)').bind(id, id, revision), update("archived_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')", 'AND archived_at IS NULL')]); checkChange(results[1]);
   } else if (action === 'restore') { checkChange(await update('archived_at = NULL', 'AND archived_at IS NOT NULL').run()); }
@@ -173,13 +164,6 @@ app.post('/api/v1/invoices/:id/:action', async c => {
     checkChange(await update('amount_paid = ?', "AND state = 'issued' AND archived_at IS NULL", [amount]).run());
   } else throw new AppError(404, 'not_found', 'Unknown invoice action');
   return c.json(await getInvoice(c.env.DB, id, c.get('businessId')));
-});
-app.delete('/api/v1/invoices/:id/share', async c => {
-  const id = c.req.param('id'); const { revision } = revisionSchema.parse(await jsonBody(c.req.raw));
-  const result = await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM shares WHERE invoice_id = ? AND EXISTS(SELECT 1 FROM invoices WHERE id = ? AND revision = ?)').bind(id, id, revision),
-    c.env.DB.prepare('UPDATE invoices SET revision = revision + 1 WHERE id = ? AND revision = ?').bind(id, revision),
-  ]); checkChange(result[1]); return c.json(await getInvoice(c.env.DB, id, c.get('businessId')));
 });
 app.get('/api/v1/customers', async c => {
   const { page, limit, offset } = pagination(c.req.query());
@@ -215,18 +199,6 @@ app.get('/api/v1/assets/:id', async c => {
   // D1 serializes BLOB reads as byte arrays. Normalize before constructing a binary response.
   return new Response(new Uint8Array(asset.bytes).buffer, { headers: { 'Content-Type': asset.mime, 'Cache-Control': 'no-store' } });
 });
-app.get('/s/:token/pdf', async c => { const invoice = await sharedInvoice(c.env, c.req.param('token')); return pdfResponse(c.env, invoice.document, invoice.status, true); });
-app.get('/s/:token/info', async c => {
-  const invoice = await sharedInvoice(c.env, c.req.param('token'));
-  return c.json({ number: invoice.number, title: invoice.document.branding.labels.title || 'Invoice', businessName: invoice.document.business.name, status: invoice.status, currency: invoice.document.currency, locale: invoice.document.locale, total: invoice.totals.total, balanceDue: invoice.totals.balanceDue });
-});
-app.get('/s/:token', async c => {
-  let status = 200;
-  try { await sharedInvoice(c.env, c.req.param('token')); }
-  catch (error) { if (error instanceof AppError && error.status === 404) status = 404; else throw error; }
-  const page = await c.env.ASSETS.fetch(c.req.raw);
-  return new Response(page.body, { status, headers: page.headers });
-});
 app.all('/s/*', () => { throw new AppError(404, 'not_found', 'This invoice link is unavailable'); });
 app.all('/api/*', () => { throw new AppError(404, 'not_found', 'API endpoint not found'); });
 app.all('/auth/*', () => { throw new AppError(404, 'not_found', 'Authentication endpoint not found'); });
@@ -241,11 +213,6 @@ app.notFound(c => c.json({ error: { code: 'not_found', message: 'Not found' } },
 function pagination(query: Record<string, string>) {
   const { page, limit } = z.object({ page: z.coerce.number().int().min(1).max(1000000).default(1), limit: z.coerce.number().int().min(1).max(100).default(25) }).parse(query);
   return { page, limit, offset: (page - 1) * limit };
-}
-async function sharedInvoice(env: Env, raw: string) {
-  if (!/^[0-9a-f]{64}$/.test(raw)) throw new AppError(404, 'not_found', 'This invoice link is unavailable');
-  const row = await env.DB.prepare("SELECT invoice_id, business_id FROM shares JOIN invoices ON invoices.id = shares.invoice_id WHERE token_hash = ? AND archived_at IS NULL AND state != 'draft'").bind(await sha(raw)).first<{ invoice_id: string; business_id: string }>();
-  if (!row) throw new AppError(404, 'not_found', 'This invoice link is unavailable'); return getInvoice(env.DB, row.invoice_id, row.business_id);
 }
 async function pdfResponse(env: Env, document: InvoiceDocument, state?: 'draft' | 'issued' | 'paid' | 'void', inline = false) {
   let logo: Uint8Array | undefined;

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import React, { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
@@ -12,6 +12,7 @@ import {
   Search,
   LogOut,
   Menu,
+  X,
   User,
   ShieldCheck,
   CheckCircle2,
@@ -44,7 +45,7 @@ const nav = [
   { path: "/taxes", name: "Tax planner", icon: Calculator },
 ];
 function Wordmark() {
-  return <picture className="brand-lockup"><source media="(prefers-color-scheme: dark)" srcSet="/business/assets/wordmark-dark.svg"/><img src="/business/assets/wordmark.svg" alt="phooey! finance"/></picture>;
+  return <div className="brand-lockup"><picture><source media="(prefers-color-scheme: dark)" srcSet="/business/assets/phooey-dark.svg"/><img src="/business/assets/phooey.svg" alt="phooey!"/></picture> finance</div>;
 }
 function Login({ onLogin }: { onLogin: () => void }) {
   const [mode, setMode] = useState<"key" | "password" | null>(null);
@@ -169,6 +170,9 @@ function OAuthConsent() {
   );
 }
 function App() {
+  const sidebarRef = useRef<HTMLElement>(null);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
+  const [compactNavigation, setCompactNavigation] = useState(() => matchMedia("(max-width: 850px)").matches);
   const [session, setSession] = useState<{
       hosted?: boolean;
       keyAuth?: boolean;
@@ -200,6 +204,42 @@ function App() {
         : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     });
   const refresh = () => setVersion((v) => v + 1);
+  useEffect(() => {
+    const query = matchMedia("(max-width: 850px)");
+    const update = () => {
+      setCompactNavigation(query.matches);
+      if (!query.matches) setMobile(false);
+    };
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!mobile || !compactNavigation) return;
+    const sidebar = sidebarRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebar?.querySelector<HTMLButtonElement>(".mobile-nav-close")?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobile(false);
+      if (event.key !== "Tab") return;
+      const controls = Array.from(sidebar?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? [])
+        .filter((element) => element.getClientRects().length > 0);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKey);
+      mobileToggleRef.current?.focus();
+    };
+  }, [mobile, compactNavigation]);
   const appearanceAutosave = useMemo(() => createAppearanceAutosave(
     (appearance) => post("/settings/transaction-appearance", appearance),
     (appearance) => setSession((current) => current ? { ...current, transactionAppearance: appearance } : current),
@@ -226,7 +266,7 @@ function App() {
     addEventListener("popstate", fn);
     return () => removeEventListener("popstate", fn);
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("phooey-theme", theme);
   }, [theme]);
@@ -287,6 +327,7 @@ function App() {
               {session.demo && <span className="badge amber">Demo data</span>}
               <button
                 className="search-trigger"
+                aria-label="Search transactions"
                 onClick={() => navigate("/transactions?focus=search")}
               >
                 <Search size={16} />
@@ -330,7 +371,8 @@ function App() {
       }}
     >
       {<div className={`app ${Page === Overview ? "overview-shell" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-        <aside id="app-sidebar" className={`sidebar ${mobile ? "open" : ""}`}>
+        {mobile && compactNavigation && <button className="mobile-nav-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={() => setMobile(false)} />}
+        <aside ref={sidebarRef} id="app-sidebar" role={compactNavigation && mobile ? "dialog" : undefined} aria-modal={compactNavigation && mobile ? true : undefined} aria-label="Workspace navigation" inert={compactNavigation && !mobile} className={`sidebar ${mobile ? "open" : ""}`}>
           <div className="sidebar-header">
             <a
               className="wordmark"
@@ -355,6 +397,7 @@ function App() {
             >
               <Menu size={20} aria-hidden="true" />
             </button>
+            <button type="button" className="icon-button mobile-nav-close" aria-label="Close navigation" onClick={() => setMobile(false)}><X size={20} /></button>
           </div>
           <nav aria-label="Main navigation">
             {menu.map((n) => (
@@ -419,9 +462,10 @@ function App() {
             </div>
           </div>
         </aside>
-        <div className="main">
+        <div className="main" inert={compactNavigation && mobile}>
           <header className="topbar">
             <button
+              ref={mobileToggleRef}
               className="icon-button mobile-toggle"
               aria-label="Toggle navigation"
               aria-controls="app-sidebar"
@@ -435,7 +479,7 @@ function App() {
             </div>
             {workspaceTools}
           </header>
-          <main className="content">
+          <main className="content" id="main-content" tabIndex={-1}>
             {!appearanceTabActive && appearanceSaveState.status === "error" && <AppearanceSaveStatus />}
             <Suspense fallback={<Loading />}>
               {active === "/oauth/authorize" ? (

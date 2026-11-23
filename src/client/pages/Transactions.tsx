@@ -844,7 +844,7 @@ export default function Transactions() {
       <div className="panel">
         {data.loading && !data.data ? (
           <Loading />
-        ) : items.length ? (
+        ) : items.length || ((view.grid || tagsOnly) && accounts.length) ? (
           <>
             {tagsOnly || view.grid ? <TransactionGrid rows={items} tagsOnly={tagsOnly} onSaved={fieldSaved}/> : <div className="table-scroll">
               <table className="transactions-table">
@@ -1016,7 +1016,7 @@ export default function Transactions() {
                 </tbody>
               </table>
             </div>}
-            <div className="pagination">
+            {items.length > 0 && <div className="pagination">
               <span>
                 {(data.data!.page - 1) * data.data!.limit + 1}–
                 {Math.min(data.data!.page * data.data!.limit, data.data!.total)}{" "}
@@ -1043,7 +1043,7 @@ export default function Transactions() {
                   <ChevronRight size={16} />
                 </Button>
               </div>
-            </div>
+            </div>}
           </>
         ) : (
           <Empty

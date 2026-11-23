@@ -49,7 +49,7 @@ export default function Accounts() {
         }
       />
       <ViewSwitch {...view} normal="Cards"/>
-      {view.grid && accounts.length ? <CatalogGrid table="accounts"/> : accounts.length ? (
+      {view.grid ? <CatalogGrid table="accounts"/> : accounts.length ? (
         <div className="account-grid">
           {accounts.map((a) => (
             <section className="panel account-card" key={a.id}>

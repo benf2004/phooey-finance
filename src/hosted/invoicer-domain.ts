@@ -1,5 +1,5 @@
 import { assert, randomToken, hash } from '../server/util';
-import { challenge, consume, cookie, customer, hasAccess, issueSession, portal, readCookie, redirect, workspace, type HostedEnv, type Slot } from './control';
+import { challenge, consume, cookie, customer, hasAccess, issueSession, portal, readCookie, redirect, workspace, type HostedEnv } from './control';
 
 export const invoiceOrigin = (env: HostedEnv) => env.INVOICER_ORIGIN || '';
 const invoiceService = (env: HostedEnv, id: string) => env[`WORKSPACE_SERVICE_${id.replaceAll('-','_')}`];
@@ -15,15 +15,8 @@ export async function invoiceDomain(req: Request, env: HostedEnv): Promise<Respo
     res.headers.append('Set-Cookie',cookie('invoice_enter','',0));
     return res;
   }
+  if (/^\/(?:w\/[^/]+\/)?s(?:\/|$)/.test(p)) return new Response('Invoice link unavailable',{status:404,headers:{'Cache-Control':'no-store'}});
   if (p.startsWith('/invoicer') && read) return redirect(origin+(p.slice('/invoicer'.length)||'/')+url.search);
-  const publicMatch = p.match(/^\/w\/([a-z][a-z0-9-]{0,23})(\/s\/[a-zA-Z0-9_-]+(?:\/(?:pdf|info))?)$/);
-  if (publicMatch && read) {
-    const slot = await env.CONTROL.prepare('SELECT * FROM workspaces WHERE id=?').bind(publicMatch[1]).first<Slot>();
-    const service = slot && invoiceService(env,slot.id);
-    assert(slot && service,404,'Invoice unavailable.');
-    // The workspace validates subscription and share token independently.
-    return service.fetch(new Request(slot.origin+'/invoicer'+publicMatch[2],{method:req.method,headers:{Accept:req.headers.get('Accept') || '*/*'}}));
-  }
   if (read && /^\/(?:assets\/|fonts\/|phooey-wordmark\.svg$|favicon\.svg$|LICENSE\.txt$)/.test(p)) {
     assert(env.INVOICER_ASSETS,404,'Asset unavailable.');
     return env.INVOICER_ASSETS.fetch(new Request(url,{method:req.method}));

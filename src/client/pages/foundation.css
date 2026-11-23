@@ -1,9 +1,9 @@
 .fd-shell {
-  --fd-ink: #173c35;
-  --fd-line: #cbd6ce;
+  --fd-ink: #4b2948;
+  --fd-line: #ded5dc;
   --fd-paper: #fffef8;
-  --fd-dim: #475b54;
-  background: #eeefe6;
+  --fd-dim: #70636d;
+  background: #f8f5f6;
   color: var(--fd-ink);
   border-radius: 10px;
   overflow: hidden;
@@ -69,11 +69,11 @@
 }
 .fd-nav a:hover,
 .fd-nav a[aria-current] {
-  background: #d5e4d7;
+  background: #f0e5ef;
 }
 .fd-nav a[aria-current] {
   font-weight: 700;
-  box-shadow: inset 3px 0 #2e6857;
+  box-shadow: inset 3px 0 #4b2948;
 }
 .fd-sheet {
   background: var(--fd-paper);

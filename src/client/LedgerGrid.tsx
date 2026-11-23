@@ -10,13 +10,14 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
+  Plus,
   ChevronDown,
   LockKeyhole,
-  Maximize2,
-  Minimize2,
   Table2,
   WrapText,
 } from "lucide-react";
+import { SheetCalendar } from "./SheetCalendar";
+import { normalizeSheetDate } from "./sheet-calendar";
 import TransactionTags from "./TransactionTags";
 import { createCellAutosave } from "./cell-autosave";
 import "./ledger-grid.css";
@@ -90,10 +91,12 @@ export function LedgerGrid<R extends { id: string }>({
   rows,
   columns,
   label,
+  newRow,
 }: {
   rows: R[];
   columns: GridColumn<R>[];
   label: string;
+  newRow?: { id: string; firstColumn: string; hint: string; pending?: boolean };
 }) {
   type Editor = {
     cell: Cell;
@@ -113,7 +116,8 @@ export function LedgerGrid<R extends { id: string }>({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const [expanded, setExpanded] = useState(false);
+  const [optionIndex, setOptionIndex] = useState(0);
+  const optionSearch = useRef({ text: "", time: 0 });
   const [wrap, setWrap] = useState(
     () => localStorage.getItem("phooey-sheet-wrap") === "true",
   );
@@ -125,19 +129,24 @@ export function LedgerGrid<R extends { id: string }>({
   });
   const table = useRef<HTMLTableElement>(null);
   const popup = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const hintId = useId();
   const errorId = useId();
-  const rowIndex = rows.findIndex((row) => row.id === selected?.row);
-  const colIndex = columns.findIndex((col) => col.key === selected?.column);
+  const rowIndex = Math.max(
+    0,
+    rows.findIndex((row) => row.id === selected?.row),
+  );
+  const colIndex = Math.max(
+    0,
+    columns.findIndex((col) => col.key === selected?.column),
+  );
   const activeCell =
-    rowIndex >= 0 && colIndex >= 0
-      ? selected
-      : rows[0] && columns[0]
-        ? { row: rows[0].id, column: columns[0].key }
-        : null;
+    rows[rowIndex] && columns[colIndex]
+      ? { row: rows[rowIndex].id, column: columns[colIndex].key }
+      : null;
   const address =
     rowIndex >= 0 && colIndex >= 0
-      ? columnLetter(colIndex) + (rowIndex + 1)
+      ? columnLetter(colIndex) + (rowIndex + 2)
       : "—";
   const activeRow = rows[rowIndex];
   const activeCol = columns[colIndex];
@@ -177,7 +186,10 @@ export function LedgerGrid<R extends { id: string }>({
       updateEditor({ ...current.current, draft: value });
   }
   function focusInput() {
-    popup.current?.querySelector<HTMLElement>("textarea,input,select")?.focus();
+    if (current.current?.column.options) popup.current?.focus();
+    else if (current.current?.column.type === "tags")
+      popup.current?.querySelector<HTMLElement>("input")?.focus();
+    else input.current?.focus();
   }
   function close() {
     updateEditor(null);
@@ -193,21 +205,30 @@ export function LedgerGrid<R extends { id: string }>({
     }
     setBusy(true);
     setError("");
-    return autosave.save(() => edit.column.save!(edit.row, edit.draft), {
-      saved: () => {
-        close();
-        setStatus("Saved");
+    return autosave.save(
+      () =>
+        edit.column.save!(
+          edit.row,
+          edit.column.type === "date"
+            ? normalizeSheetDate(edit.draft)
+            : edit.draft,
+        ),
+      {
+        saved: () => {
+          close();
+          setStatus("Saved");
+        },
+        failed: (e) => {
+          setError(
+            e instanceof Error
+              ? e.message
+              : "Could not save this cell. Try again.",
+          );
+          requestAnimationFrame(focusInput);
+        },
+        settled: () => setBusy(false),
       },
-      failed: (e) => {
-        setError(
-          e instanceof Error
-            ? e.message
-            : "Could not save this cell. Try again.",
-        );
-        requestAnimationFrame(focusInput);
-      },
-      settled: () => setBusy(false),
-    });
+    );
   }
   async function select(cell: Cell) {
     if (current.current && sameCell(current.current.cell, cell)) return;
@@ -236,7 +257,9 @@ export function LedgerGrid<R extends { id: string }>({
     column = freshColumn;
     const original = column.value(row);
     setSelected(cell);
-    setExpanded(false);
+    setOptionIndex(
+      Math.max(0, column.options?.findIndex((o) => o.value === original) ?? 0),
+    );
     setError("");
     setStatus("");
     updateEditor({
@@ -271,7 +294,8 @@ export function LedgerGrid<R extends { id: string }>({
     row: R,
     col: GridColumn<R>,
   ) {
-    if (event.nativeEvent.isComposing) return;
+    if (event.target !== event.currentTarget || event.nativeEvent.isComposing)
+      return;
     const cell = { row: row.id, column: col.key };
     const directions: Record<string, [number, number]> = {
       ArrowUp: [-1, 0],
@@ -297,7 +321,11 @@ export function LedgerGrid<R extends { id: string }>({
         event.preventDefault();
         void select(next);
       }
-    } else if (event.key === "Enter" || event.key === "F2") {
+    } else if (
+      event.key === "Enter" ||
+      event.key === "F2" ||
+      (event.key === " " && col.options)
+    ) {
       event.preventDefault();
       void open(row, col);
     } else if (
@@ -313,26 +341,114 @@ export function LedgerGrid<R extends { id: string }>({
     }
   }
 
+  function editorKey(e: KeyboardEvent<HTMLElement>) {
+    if (busy || e.nativeEvent.isComposing || e.defaultPrevented) return;
+    if (
+      e.altKey &&
+      e.key === "ArrowDown" &&
+      current.current?.column.type === "date"
+    ) {
+      e.preventDefault();
+      popup.current
+        ?.querySelector<HTMLElement>('.sheet-calendar-day[tabindex="0"]')
+        ?.focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      const cell = current.current?.cell;
+      close();
+      if (cell) focusCell(cell);
+    } else if (
+      e.key === "Tab" ||
+      (e.key === "Enter" &&
+        !e.shiftKey &&
+        !e.altKey &&
+        current.current?.column.type !== "tags")
+    ) {
+      e.preventDefault();
+      const cell = current.current?.cell;
+      if (cell)
+        void finishAt(
+          destination(
+            cell,
+            e.key === "Enter" ? 1 : 0,
+            e.key === "Tab" ? (e.shiftKey ? -1 : 1) : 0,
+            e.key === "Tab",
+          ),
+        );
+    }
+  }
+  async function chooseOption(value: string) {
+    const cell = current.current?.cell;
+    if (!cell || autosave.pending) return;
+    draft(value);
+    if (await commit()) focusCell(cell);
+  }
+  function dropdownKey(e: KeyboardEvent<HTMLDivElement>) {
+    const options = current.current?.column.options ?? [];
+    if (busy || e.nativeEvent.isComposing) return;
+    if (!options.length) {
+      editorKey(e);
+      return;
+    }
+    if (
+      e.key === "ArrowDown" ||
+      e.key === "ArrowUp" ||
+      e.key === "Home" ||
+      e.key === "End"
+    ) {
+      e.preventDefault();
+      setOptionIndex((i) =>
+        e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? options.length - 1
+            : (i + (e.key === "ArrowDown" ? 1 : -1) + options.length) %
+              options.length,
+      );
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      void chooseOption(options[optionIndex].value);
+    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const now = Date.now();
+      const text =
+        (now - optionSearch.current.time < 750
+          ? optionSearch.current.text
+          : "") + e.key.toLowerCase();
+      optionSearch.current = { text, time: now };
+      const index = options.findIndex((o) =>
+        o.label.toLowerCase().startsWith(text),
+      );
+      if (index >= 0) setOptionIndex(index);
+      e.preventDefault();
+    } else editorKey(e);
+  }
   const editingRow = editor?.cell.row;
   const editingColumn = editor?.cell.column;
+  const isDate = editor?.column.type === "date";
+  const hasMenu =
+    !!editor &&
+    (!!editor.column.options || editor.column.type === "tags" || isDate);
   useLayoutEffect(() => {
-    if (!editor) return;
+    if (!editor || !hasMenu) return;
     const place = () => {
       const rect = cellElement(editor.cell)?.getBoundingClientRect();
       if (!rect) return;
       const width = Math.min(
-        expanded ? 560 : Math.max(rect.width, 340),
+        isDate
+          ? 232
+          : Math.max(rect.width, editor.column.type === "tags" ? 280 : 200),
         window.innerWidth - 16,
       );
-      const height = Math.min(
-        popup.current?.offsetHeight || 220,
-        window.innerHeight - 16,
-      );
+      const height = Math.min(popup.current?.offsetHeight || 180, 320);
+      const below = window.innerHeight - rect.bottom - 8;
+      const above = rect.top - 8;
+      const flip = below < height && above > below;
       setPosition({
         left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
-        top: Math.max(8, Math.min(rect.top, window.innerHeight - height - 8)),
+        top: flip ? Math.max(8, rect.top - height - 1) : rect.bottom + 1,
         width,
-        maxHeight: window.innerHeight - 16,
+        maxHeight: Math.max(80, Math.min(320, flip ? above : below)),
       });
     };
     place();
@@ -345,23 +461,78 @@ export function LedgerGrid<R extends { id: string }>({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [editingRow, editingColumn, expanded, rows, columns]);
+  }, [editingRow, editingColumn, hasMenu, isDate, rows, columns]);
+  useLayoutEffect(() => {
+    if (!editor || (hasMenu && !isDate) || !input.current) return;
+    const sizeInput = () => {
+      const element = input.current;
+      const cell = cellElement(editor.cell);
+      if (!element || !cell) return;
+      const rect = cell.getBoundingClientRect();
+      const bounds = table.current?.parentElement?.getBoundingClientRect();
+      const measure = document.createElement("canvas").getContext("2d");
+      if (measure) measure.font = "13px Arial";
+      const textWidth =
+        Math.max(
+          0,
+          ...editor.draft
+            .split("\n")
+            .map((line) => measure?.measureText(line).width ?? 0),
+        ) + 16;
+      const available = Math.max(
+        rect.width,
+        (bounds?.right ?? window.innerWidth) - rect.left - 2,
+      );
+      const width = wrap
+        ? rect.width + 1
+        : Math.min(available, Math.max(rect.width + 1, textWidth));
+      element.style.width = width + "px";
+      element.style.height = "0px";
+      element.style.height =
+        Math.min(260, Math.max(rect.height + 1, element.scrollHeight + 4)) +
+        "px";
+    };
+    sizeInput();
+    window.addEventListener("resize", sizeInput);
+    return () => window.removeEventListener("resize", sizeInput);
+  }, [
+    editingRow,
+    editingColumn,
+    editor?.draft,
+    wrap,
+    rows,
+    columns,
+    hasMenu,
+    isDate,
+  ]);
   useEffect(() => {
     if (!editingRow) return;
     focusInput();
-    const input = popup.current?.querySelector<
-      HTMLTextAreaElement | HTMLInputElement
-    >("textarea,input");
-    if (input && input.type !== "date") {
-      if (current.current?.selectAll) input.select();
-      else input.setSelectionRange(input.value.length, input.value.length);
+    if (input.current) {
+      if (current.current?.selectAll) input.current.select();
+      else
+        input.current.setSelectionRange(
+          input.current.value.length,
+          input.current.value.length,
+        );
     }
   }, [editingRow, editingColumn]);
   useEffect(() => {
+    popup.current
+      ?.querySelector<HTMLElement>(`[data-option-index="${optionIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [optionIndex, editingRow, editingColumn]);
+  useEffect(() => {
     if (!editor) return;
     const outside = (event: PointerEvent) => {
-      if (!popup.current?.contains(event.target as Node)) {
-        // Blur first so a pending tag is added before the cell is committed.
+      const target = event.target as Node;
+      if (
+        !popup.current?.contains(target) &&
+        !input.current?.contains(target) &&
+        !(
+          current.current && cellElement(current.current.cell)?.contains(target)
+        )
+      ) {
         (document.activeElement as HTMLElement | null)?.blur?.();
         void commit();
       }
@@ -387,9 +558,6 @@ export function LedgerGrid<R extends { id: string }>({
       aria-label={label}
     >
       <div className="sheet-toolbar">
-        <span className="sheet-address" aria-label="Selected cell">
-          {address}
-        </span>
         <button
           type="button"
           className="sheet-tool"
@@ -399,9 +567,24 @@ export function LedgerGrid<R extends { id: string }>({
             localStorage.setItem("phooey-sheet-wrap", String(!wrap));
           }}
         >
-          <WrapText size={15} />
+          <WrapText size={16} />
           Wrap text
         </button>
+        {newRow && (
+          <button
+            type="button"
+            className="sheet-tool"
+            disabled={busy}
+            onClick={() => {
+              const row = rows.find((r) => r.id === newRow.id),
+                column = columns.find((c) => c.key === newRow.firstColumn);
+              if (row && column) void open(row, column);
+            }}
+          >
+            <Plus size={16} />
+            Add row
+          </button>
+        )}
         <span
           className={`sheet-save-status${error ? " has-error" : ""}`}
           role="status"
@@ -410,22 +593,34 @@ export function LedgerGrid<R extends { id: string }>({
             "Saving…"
           ) : error ? (
             "Not saved"
+          ) : newRow && (newRow.pending || activeRow?.id === newRow.id) ? (
+            newRow?.hint
+          ) : editor ? (
+            "Editing…"
           ) : status ? (
             <>
-              <Check size={13} />
+              <Check size={14} />
               {status}
             </>
           ) : (
-            "Changes save automatically"
+            "All changes saved"
           )}
         </span>
       </div>
       <div className="sheet-value-bar">
-        <span>{activeCol?.title ?? "Cell value"}</span>
-        <div title={fullValue}>
-          {editor && editor.column.type !== "tags"
-            ? editor.draft || "—"
-            : fullValue || "—"}
+        <span className="sheet-address" aria-label="Selected cell">
+          {rows.length ? address : "—"}
+        </span>
+        <span className="sheet-fx" aria-hidden="true">
+          fx
+        </span>
+        <div
+          title={fullValue}
+          onDoubleClick={() => {
+            if (activeRow && activeCol) void open(activeRow, activeCol);
+          }}
+        >
+          {editor && editor.column.type !== "tags" ? editor.draft : fullValue}
         </div>
         {readonly && (
           <span className="sheet-readonly">
@@ -434,13 +629,21 @@ export function LedgerGrid<R extends { id: string }>({
           </span>
         )}
       </div>
+      {error && (
+        <p id={errorId} role="alert" className="sheet-editor-error">
+          {error}{" "}
+          <span>
+            Your edit is kept in the cell. Enter or Tab retries; Esc discards.
+          </span>
+        </p>
+      )}
       <div className="table-scroll sheet-scroll">
         <table
           ref={table}
           role="grid"
           aria-label={label}
           aria-describedby={hintId}
-          aria-rowcount={rows.length + 1}
+          aria-rowcount={rows.length + 2}
           aria-colcount={columns.length + 1}
           style={{
             width:
@@ -454,10 +657,8 @@ export function LedgerGrid<R extends { id: string }>({
             ))}
           </colgroup>
           <thead>
-            <tr>
-              <th scope="col" aria-label="Row number" className="sheet-corner">
-                #
-              </th>
+            <tr className="sheet-letters">
+              <th className="sheet-corner" aria-label="Row number" />
               {columns.map((col, i) => (
                 <th
                   key={col.key}
@@ -466,7 +667,14 @@ export function LedgerGrid<R extends { id: string }>({
                     activeCell?.column === col.key ? "sheet-active-heading" : ""
                   }
                 >
-                  <span className="sheet-column-letter">{columnLetter(i)}</span>
+                  {columnLetter(i)}
+                </th>
+              ))}
+            </tr>
+            <tr className="sheet-labels">
+              <th scope="row">1</th>
+              {columns.map((col) => (
+                <th key={col.key} scope="col">
                   {col.title}
                 </th>
               ))}
@@ -474,24 +682,31 @@ export function LedgerGrid<R extends { id: string }>({
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={row.id}>
+              <tr
+                key={row.id}
+                className={row.id === newRow?.id ? "sheet-new-row" : undefined}
+              >
                 <th
                   scope="row"
                   className={
                     activeCell?.row === row.id ? "sheet-active-heading" : ""
                   }
                 >
-                  {i + 1}
+                  {row.id === newRow?.id ? (
+                    <span aria-label="New row">+</span>
+                  ) : (
+                    i + 2
+                  )}
                 </th>
                 {columns.map((col) => {
                   const editable = !!col.save && !col.locked?.(row);
                   const cell = { row: row.id, column: col.key };
                   const editing = sameCell(editor?.cell ?? null, cell);
                   const active = sameCell(activeCell, cell);
-                  const value = col.display
-                    ? col.display(row)
-                    : (col.options?.find((o) => o.value === col.value(row))
-                        ?.label ?? col.value(row));
+                  const optionLabel =
+                    col.options?.find((o) => o.value === col.value(row))
+                      ?.label ?? col.value(row);
+                  const value = col.display ? col.display(row) : optionLabel;
                   return (
                     <td
                       key={col.key}
@@ -499,21 +714,23 @@ export function LedgerGrid<R extends { id: string }>({
                       tabIndex={active ? 0 : -1}
                       aria-selected={active}
                       aria-readonly={!editable}
-                      aria-label={
-                        col.title +
-                        ", row " +
-                        (i + 1) +
-                        ": " +
-                        (typeof value === "string" ? value : col.value(row))
-                      }
+                      aria-label={`${col.title}, row ${i + 1}: ${typeof value === "string" ? value : col.value(row)}`}
                       className={`${active ? "selected-cell " : ""}${editing ? "editing-cell " : ""}${!editable ? "fixed-cell " : ""}${col.type === "number" ? "number-cell" : ""}`}
-                      onClick={() => void select(cell)}
+                      onClick={(e) => {
+                        if (
+                          e.target === e.currentTarget ||
+                          (e.target as HTMLElement).closest(".grid-value")
+                        )
+                          void select(cell);
+                      }}
                       onDoubleClick={() => void open(row, col)}
-                      onFocus={() => {
-                        if (!current.current) setSelected(cell);
+                      onFocus={(e) => {
+                        if (e.target === e.currentTarget && !current.current)
+                          setSelected(cell);
                       }}
                       onKeyDown={(e) => cellKey(e, row, col)}
                       onCopy={(e) => {
+                        if (e.target !== e.currentTarget) return;
                         e.clipboardData.setData(
                           "text/plain",
                           col.type === "tags"
@@ -523,6 +740,7 @@ export function LedgerGrid<R extends { id: string }>({
                         e.preventDefault();
                       }}
                       onPaste={(e) => {
+                        if (e.target !== e.currentTarget) return;
                         if (editable && !col.options && col.type !== "tags") {
                           e.preventDefault();
                           void open(
@@ -539,14 +757,55 @@ export function LedgerGrid<R extends { id: string }>({
                           typeof value === "string" ? value : col.value(row)
                         }
                       >
-                        {value || <span className="grid-blank">—</span>}
-                        {editable && col.options && (
-                          <ChevronDown
-                            className="sheet-select-indicator"
-                            size={12}
-                          />
+                        {col.options && editable ? (
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            className="sheet-dropdown-chip"
+                            aria-label={`${col.title}: ${optionLabel}`}
+                            aria-haspopup="listbox"
+                            aria-expanded={editing}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void open(row, col);
+                            }}
+                          >
+                            <span>{optionLabel || "—"}</span>
+                            <ChevronDown size={12} />
+                          </button>
+                        ) : (
+                          value || ""
                         )}
                       </div>
+                      {editing &&
+                        editor &&
+                        !col.options &&
+                        col.type !== "tags" && (
+                          <textarea
+                            ref={input}
+                            className="sheet-inline-input"
+                            aria-label={col.title}
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : hintId}
+                            rows={1}
+                            readOnly={busy}
+                            inputMode={
+                              col.type === "number" ? "decimal" : undefined
+                            }
+                            spellCheck={false}
+                            value={editor.draft}
+                            onChange={(e) => draft(e.target.value)}
+                            onKeyDown={editorKey}
+                            onBlur={(event) => {
+                              if (
+                                !popup.current?.contains(
+                                  event.relatedTarget as Node | null,
+                                )
+                              )
+                                void commit();
+                            }}
+                          />
+                        )}
                     </td>
                   );
                 })}
@@ -558,143 +817,107 @@ export function LedgerGrid<R extends { id: string }>({
       {!rows.length && <p className="sheet-empty">No records in this view.</p>}
       <div className="sheet-footer">
         <span>
-          {rows.length.toLocaleString()} {rows.length === 1 ? "row" : "rows"} ·{" "}
-          {columns.length} columns
+          <Table2 size={14} />
+          {label.replace(/ spreadsheet$/, "")}
         </span>
-        <span id={hintId}>
-          Double-click to edit · Enter or Tab to finish · Esc to discard
+        <span>
+          {(rows.length - (newRow ? 1 : 0)).toLocaleString()}{" "}
+          {rows.length - (newRow ? 1 : 0) === 1 ? "row" : "rows"}
         </span>
       </div>
+      <span id={hintId} className="sheet-sr-only">
+        Double-click or press Enter to edit. Enter or Tab saves. Shift+Enter
+        adds a line. Escape discards.
+      </span>
       {editor &&
+        hasMenu &&
         createPortal(
-          <div
-            ref={popup}
-            className={`sheet-cell-editor${expanded ? " is-expanded" : ""}`}
-            style={position}
-            role="dialog"
-            aria-label={`Edit ${editor.column.title}`}
-            aria-busy={busy}
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null))
-                void commit();
-            }}
-            onKeyDown={(e) => {
-              if (busy || e.nativeEvent.isComposing || e.defaultPrevented)
-                return;
-              if (e.key === "Escape") {
-                e.preventDefault();
-                const cell = editor.cell;
-                close();
-                focusCell(cell);
-                return;
-              }
-              if (e.target instanceof HTMLButtonElement) return;
-              if (
-                e.key === "Tab" ||
-                (e.key === "Enter" &&
-                  !e.shiftKey &&
-                  editor.column.type !== "tags")
-              ) {
-                e.preventDefault();
-                void finishAt(
-                  destination(
-                    editor.cell,
-                    e.key === "Enter" ? 1 : 0,
-                    e.key === "Tab" ? (e.shiftKey ? -1 : 1) : 0,
-                    e.key === "Tab",
-                  ),
-                );
-              }
-            }}
-          >
-            <div className="sheet-editor-heading">
-              <span>
-                {address}
-                <b>{editor.column.title}</b>
-              </span>
-              {!editor.column.options &&
-                editor.column.type !== "tags" &&
-                editor.column.type !== "date" &&
-                editor.column.type !== "number" && (
-                  <button
-                    type="button"
-                    className="sheet-tool"
-                    aria-label={expanded ? "Shrink editor" : "Expand editor"}
-                    onClick={() => {
-                      setExpanded(!expanded);
-                      requestAnimationFrame(focusInput);
-                    }}
-                  >
-                    {expanded ? (
-                      <Minimize2 size={14} />
-                    ) : (
-                      <Maximize2 size={14} />
-                    )}
-                  </button>
-                )}
+          isDate ? (
+            <div
+              ref={popup}
+              className="sheet-calendar"
+              style={position}
+              role="dialog"
+              aria-label="Choose date"
+              aria-busy={busy}
+              onPointerDown={(event) => event.preventDefault()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" || event.key === "Tab")
+                  editorKey(event);
+              }}
+              onBlur={(event) => {
+                if (
+                  !event.currentTarget.contains(
+                    event.relatedTarget as Node | null,
+                  ) &&
+                  event.relatedTarget !== input.current
+                )
+                  void commit();
+              }}
+            >
+              <SheetCalendar
+                key={`${editor.cell.row}-${editor.cell.column}`}
+                value={editor.draft}
+                disabled={busy}
+                onSelect={(value) => void chooseOption(value)}
+              />
             </div>
-            <fieldset disabled={busy}>
-              {editor.column.type === "tags" ? (
+          ) : editor.column.options ? (
+            <div
+              ref={popup}
+              className="sheet-dropdown-menu"
+              style={position}
+              role="listbox"
+              aria-label={editor.column.title}
+              tabIndex={0}
+              aria-activedescendant={`${hintId}-option-${optionIndex}`}
+              aria-busy={busy}
+              onKeyDown={dropdownKey}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                  void commit();
+              }}
+            >
+              {editor.column.options.map((option, i) => (
+                <div
+                  key={option.value}
+                  id={`${hintId}-option-${i}`}
+                  role="option"
+                  aria-selected={editor.draft === option.value}
+                  data-option-index={i}
+                  className={`sheet-dropdown-option${optionIndex === i ? " is-highlighted" : ""}`}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onPointerMove={() => setOptionIndex(i)}
+                  onClick={() => void chooseOption(option.value)}
+                >
+                  <span className="sheet-option-chip">{option.label}</span>
+                  {editor.draft === option.value && <Check size={14} />}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              ref={popup}
+              className="sheet-tags-editor"
+              style={position}
+              role="dialog"
+              aria-label={`Edit ${editor.column.title}`}
+              aria-busy={busy}
+              onKeyDown={editorKey}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                  void commit();
+              }}
+            >
+              <fieldset disabled={busy}>
                 <TransactionTags
                   value={JSON.parse(editor.draft)}
                   commitOnBlur
                   onChange={(tags) => draft(JSON.stringify(tags))}
                 />
-              ) : editor.column.options ? (
-                <select
-                  aria-label={editor.column.title}
-                  value={editor.draft}
-                  onChange={(e) => draft(e.target.value)}
-                >
-                  {editor.column.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : editor.column.type === "date" ||
-                editor.column.type === "number" ? (
-                <input
-                  aria-label={editor.column.title}
-                  aria-invalid={!!error}
-                  aria-describedby={error ? errorId : undefined}
-                  type={editor.column.type === "date" ? "date" : "text"}
-                  inputMode={
-                    editor.column.type === "number" ? "decimal" : undefined
-                  }
-                  value={editor.draft}
-                  onChange={(e) => draft(e.target.value)}
-                />
-              ) : (
-                <textarea
-                  aria-label={editor.column.title}
-                  aria-invalid={!!error}
-                  aria-describedby={error ? errorId : undefined}
-                  rows={expanded ? 9 : 3}
-                  value={editor.draft}
-                  onChange={(e) => draft(e.target.value)}
-                />
-              )}
-            </fieldset>
-            <div className="sheet-editor-hint">
-              {busy
-                ? "Saving…"
-                : editor.column.type === "tags"
-                  ? "Tab or click outside to finish"
-                  : editor.column.options || editor.column.type
-                    ? "Enter or Tab to finish · Esc to discard"
-                    : "Enter to finish · Shift+Enter for a new line"}
+              </fieldset>
             </div>
-            {error && (
-              <p id={errorId} role="alert" className="sheet-editor-error">
-                {error}{" "}
-                <span>
-                  Your edit is kept here. Press Enter or Tab to retry; Esc to
-                  discard.
-                </span>
-              </p>
-            )}
-          </div>,
+          ),
           document.body,
         )}
     </section>

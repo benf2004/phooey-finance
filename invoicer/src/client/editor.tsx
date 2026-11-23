@@ -1,3 +1,4 @@
+import { AutoTextarea, InvoiceParty } from "./invoice-fields";
 import { invoicePath } from "./paths";
 import { useEffect, useState, lazy, Suspense } from "react";
 import {
@@ -9,22 +10,21 @@ import {
   Pencil,
   Check,
   Copy,
-  Link2,
-  Unlink,
   Archive,
   RotateCcw,
   Ban,
   Save,
+  RefreshCw,
 } from "lucide-react";
-import { api, allPages, body, downloadBytes, businessHeaders, assetPath } from "./api";
 import {
-  BrandingFields,
-  LogoField,
-  Field,
-  PartyFields,
-  Modal,
-  Empty,
-} from "./components";
+  api,
+  allPages,
+  body,
+  downloadBytes,
+  businessHeaders,
+  assetPath,
+} from "./api";
+import { BrandingFields, LogoField, Field, Modal, Empty } from "./components";
 import {
   calculate,
   currencies,
@@ -60,7 +60,8 @@ async function makePdf(doc: InvoiceDocument, state?: Invoice["status"]) {
   let logo: Uint8Array | undefined;
   if (parsed.branding.logoAssetId) {
     const res = await fetch(
-      invoicePath(`/api/v1/assets/${parsed.branding.logoAssetId}`), { headers: businessHeaders() },
+      invoicePath(`/api/v1/assets/${parsed.branding.logoAssetId}`),
+      { headers: businessHeaders() },
     );
     if (!res.ok) throw new Error("Logo could not be loaded");
     logo = new Uint8Array(await res.arrayBuffer());
@@ -94,9 +95,10 @@ export function Editor({
   const [pdfError, setPdfError] = useState("");
   const [payment, setPayment] = useState(false);
   const [paidValue, setPaidValue] = useState("");
-  const [shareUrl, setShareUrl] = useState("");
   const [confirmIssue, setConfirmIssue] = useState(false);
   const [presetId, setPresetId] = useState("");
+  const [showDiscount, setShowDiscount] = useState(false);
+  const [showShippingCharge, setShowShippingCharge] = useState(false);
   const editable = !saved || (saved.status === "draft" && !saved.archivedAt);
   useEffect(() => {
     let active = true;
@@ -220,7 +222,7 @@ export function Editor({
       if (!id) {
         onDraftCreated(`/invoices/${invoice.id}`);
       }
-      notify(issue ? "Invoice issued. Ready to share." : "Draft saved.");
+      notify(issue ? "Invoice issued." : "Draft saved.");
     });
   }
   async function action(name: string, extra: object = {}) {
@@ -237,35 +239,10 @@ export function Editor({
         setSaved(result);
         setDoc(result.document);
         setDirty(false);
-        setShareUrl("");
         notify(
           `Invoice ${name === "payment" ? "payment updated" : name === "archive" ? "archived" : name === "restore" ? "restored" : "voided"}.`,
         );
       }
-    });
-  }
-  async function share() {
-    if (!saved) return;
-    await run(async () => {
-      const result = await api<{ url: string; invoice: Invoice }>(
-        `/invoices/${saved.id}/share`,
-        { method: "POST", body: body({ revision: saved.revision }) },
-      );
-      setSaved(result.invoice);
-      setShareUrl(result.url);
-      notify("Share link created. Anyone with this link can view the invoice.");
-    });
-  }
-  async function revoke() {
-    if (!saved) return;
-    await run(async () => {
-      const result = await api<Invoice>(`/invoices/${saved.id}/share`, {
-        method: "DELETE",
-        body: body({ revision: saved.revision }),
-      });
-      setSaved(result);
-      setShareUrl("");
-      notify("Share link revoked.");
     });
   }
   let totals: Totals | undefined;
@@ -279,8 +256,35 @@ export function Editor({
         : "Complete the required invoice fields to calculate totals.";
   }
   const labels = { ...labelDefaults, ...doc.branding.labels };
-  const label = (key: LabelKey) => <input className={`editable-label label-${key}`} aria-label={`${labelDefaults[key]} label`} maxLength={64} value={labels[key]} onChange={e => update("branding", { ...doc.branding, labels: { ...doc.branding.labels, [key]: e.target.value } })} onBlur={e => { if (!e.target.value.trim()) update("branding", { ...doc.branding, labels: { ...doc.branding.labels, [key]: labelDefaults[key] } }); }} />;
-  const format = (n: number) => money(n, doc.currency, doc.locale);
+  const label = (key: LabelKey) => (
+    <input
+      className={`editable-label label-${key}`}
+      aria-label={`${labelDefaults[key]} label`}
+      maxLength={64}
+      value={labels[key]}
+      onChange={(e) =>
+        update("branding", {
+          ...doc.branding,
+          labels: { ...doc.branding.labels, [key]: e.target.value },
+        })
+      }
+      onBlur={(e) => {
+        if (!e.target.value.trim())
+          update("branding", {
+            ...doc.branding,
+            labels: { ...doc.branding.labels, [key]: labelDefaults[key] },
+          });
+      }}
+    />
+  );
+  const currencySymbol =
+    new Intl.NumberFormat(doc.locale, {
+      style: "currency",
+      currency: doc.currency,
+    })
+      .formatToParts(0)
+      .find((part) => part.type === "currency")?.value || doc.currency;
+  const format = (n: number) => money(n, doc.currency, doc.locale, "symbol");
   const back = () => {
     if (
       !dirty ||
@@ -341,7 +345,7 @@ export function Editor({
                 {
                   "--invoice-accent": doc.branding.accentColor,
                   fontFamily: {
-                    sans: "Noto Sans, sans-serif",
+                    sans: "Inter, sans-serif",
                     serif: "Noto Serif, serif",
                     mono: "Noto Sans Mono, monospace",
                   }[doc.branding.font],
@@ -384,109 +388,53 @@ export function Editor({
                   />
                 </label>
               </div>
-              <div className="paper-party">
-                <input
-                  aria-label="Business name"
-                  placeholder="Your business name"
-                  value={doc.business.name}
-                  onChange={(e) =>
-                    update("business", {
-                      ...doc.business,
-                      name: e.target.value,
-                    })
-                  }
-                />
-                <textarea
-                  aria-label="Business address"
-                  placeholder="Business address"
-                  value={doc.business.address}
-                  rows={3}
-                  onChange={(e) =>
-                    update("business", {
-                      ...doc.business,
-                      address: e.target.value,
-                    })
-                  }
-                />
-                <details
-                  className="party-contact"
-                  open={
-                    doc.business.email ||
-                    doc.business.phone ||
-                    doc.business.taxId
-                      ? true
-                      : undefined
-                  }
-                >
-                  <summary>Contact details</summary>
-                  <input
-                    aria-label="Business email"
-                    placeholder="Email"
-                    value={doc.business.email}
-                    onChange={(e) =>
-                      update("business", {
-                        ...doc.business,
-                        email: e.target.value,
-                      })
-                    }
-                  />
-                  <input
-                    aria-label="Business phone"
-                    placeholder="Phone (optional)"
-                    value={doc.business.phone}
-                    onChange={(e) =>
-                      update("business", {
-                        ...doc.business,
-                        phone: e.target.value,
-                      })
-                    }
-                  />
-                  <input
-                    aria-label="Business tax ID"
-                    placeholder="Tax ID (optional)"
-                    value={doc.business.taxId}
-                    onChange={(e) =>
-                      update("business", {
-                        ...doc.business,
-                        taxId: e.target.value,
-                      })
-                    }
-                  />
-                </details>
-              </div>
               <div className="paper-top">
-                <div className="paper-parties">
-                  <section>
-                    <h3>{label("billTo")}</h3>
-                    <select
-                      aria-label="Choose customer"
-                      value=""
-                      onChange={(e) => {
-                        const c = customers.find(
-                          (c) => c.id === e.target.value,
-                        );
-                        if (c) update("billTo", { ...c.party });
-                      }}
-                    >
-                      <option value="">Choose a saved customer…</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.party.name}
-                        </option>
-                      ))}
-                    </select>
-                    <PartyFields
-                      value={doc.billTo}
-                      onChange={(p) => update("billTo", p)}
-                      compact
+                <div className="paper-people">
+                  <div className="paper-party">
+                    <InvoiceParty
+                      value={doc.business}
+                      onChange={(p) => update("business", p)}
+                      label="From"
+                      placeholder="Who is this from?"
                     />
-                  </section>
-                  {doc.branding.showShipping && (
+                  </div>
+                  <div className="paper-parties">
                     <section>
-                      <h3>{label("shipTo")}</h3>
-                      <PartyFields
+                      <div className="party-heading">
+                        {label("billTo")}
+                        {customers.length > 0 && (
+                          <select
+                            aria-label="Choose customer"
+                            value=""
+                            onChange={(e) => {
+                              const customer = customers.find(
+                                (c) => c.id === e.target.value,
+                              );
+                              if (customer)
+                                update("billTo", { ...customer.party });
+                            }}
+                          >
+                            <option value="">Saved</option>
+                            {customers.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.party.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <InvoiceParty
+                        value={doc.billTo}
+                        onChange={(p) => update("billTo", p)}
+                        label="Bill to"
+                        placeholder="Who is this to?"
+                      />
+                    </section>
+                    <section>
+                      {label("shipTo")}
+                      <InvoiceParty
                         value={
-                          doc.shipTo || {
+                          (doc.branding.showShipping && doc.shipTo) || {
                             name: "",
                             address: "",
                             email: "",
@@ -494,11 +442,19 @@ export function Editor({
                             taxId: "",
                           }
                         }
-                        onChange={(p) => update("shipTo", p)}
-                        compact
+                        onChange={(p) => {
+                          setDoc((d) => ({
+                            ...d,
+                            shipTo: p,
+                            branding: { ...d.branding, showShipping: true },
+                          }));
+                          setDirty(true);
+                        }}
+                        label="Ship to"
+                        placeholder="(optional)"
                       />
                     </section>
-                  )}
+                  </div>
                 </div>
                 <div className="paper-meta">
                   <Field label={label("date")}>
@@ -509,6 +465,13 @@ export function Editor({
                       onChange={(e) => update("date", e.target.value)}
                     />
                   </Field>
+                  <Field label={label("paymentTerms")}>
+                    <input
+                      aria-label="Payment terms"
+                      value={doc.paymentTerms}
+                      onChange={(e) => update("paymentTerms", e.target.value)}
+                    />
+                  </Field>
                   <Field label={label("dueDate")}>
                     <input
                       type="date"
@@ -517,25 +480,13 @@ export function Editor({
                       onChange={(e) => update("dueDate", e.target.value)}
                     />
                   </Field>
-                  <details className="party-contact">
-                    <summary>Reference &amp; terms</summary>
-                    <Field label={label("paymentTerms")}>
-                      <input
-                        aria-label="Payment terms"
-                        placeholder="e.g. Net 30"
-                        value={doc.paymentTerms}
-                        onChange={(e) => update("paymentTerms", e.target.value)}
-                      />
-                    </Field>
-                    <Field label={label("poNumber")}>
-                      <input
-                        aria-label="PO number"
-                        placeholder="Optional"
-                        value={doc.poNumber}
-                        onChange={(e) => update("poNumber", e.target.value)}
-                      />
-                    </Field>
-                  </details>
+                  <Field label={label("poNumber")}>
+                    <input
+                      aria-label="PO number"
+                      value={doc.poNumber}
+                      onChange={(e) => update("poNumber", e.target.value)}
+                    />
+                  </Field>
                 </div>
               </div>
               <div className="line-items">
@@ -548,11 +499,11 @@ export function Editor({
                 </div>
                 {doc.items.map((item, i) => (
                   <div className="line-item" key={i}>
-                    <textarea
+                    <AutoTextarea
                       aria-label={`Item ${i + 1} description`}
                       value={item.description}
-                      rows={2}
-                      placeholder="Product or service"
+                      rows={1}
+                      placeholder="Description of item/service..."
                       onChange={(e) =>
                         update(
                           "items",
@@ -575,19 +526,22 @@ export function Editor({
                         )
                       }
                     />
-                    <input
-                      inputMode="decimal"
-                      aria-label={`Item ${i + 1} rate`}
-                      value={item.rate}
-                      onChange={(e) =>
-                        update(
-                          "items",
-                          doc.items.map((x, j) =>
-                            i === j ? { ...x, rate: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />
+                    <div className="money-input">
+                      <span aria-hidden="true">{currencySymbol}</span>
+                      <input
+                        inputMode="decimal"
+                        aria-label={`Item ${i + 1} rate`}
+                        value={item.rate}
+                        onChange={(e) =>
+                          update(
+                            "items",
+                            doc.items.map((x, j) =>
+                              i === j ? { ...x, rate: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                     <span className="line-amount">
                       {totals ? format(totals.lines[i]) : "—"}
                     </span>
@@ -616,7 +570,7 @@ export function Editor({
                       ])
                     }
                   >
-                    <Plus size={15} /> Add line item
+                    <Plus size={15} /> Line Item
                   </button>
                 )}
               </div>
@@ -624,10 +578,10 @@ export function Editor({
                 <div className="paper-notes">
                   {doc.branding.showNotes && (
                     <Field label={label("notes")}>
-                      <textarea
+                      <AutoTextarea
                         aria-label="Notes"
-                        rows={3}
-                        placeholder="A personal note, or a quick thank you."
+                        rows={2}
+                        placeholder="Notes - any relevant information not already covered"
                         value={doc.notes}
                         onChange={(e) => update("notes", e.target.value)}
                       />
@@ -635,10 +589,10 @@ export function Editor({
                   )}
                   {doc.branding.showTerms && (
                     <Field label={label("terms")}>
-                      <textarea
+                      <AutoTextarea
                         aria-label="Terms"
-                        rows={3}
-                        placeholder="Payment instructions and terms."
+                        rows={2}
+                        placeholder="Terms and conditions - late fees, payment methods, delivery schedule"
                         value={doc.terms}
                         onChange={(e) => update("terms", e.target.value)}
                       />
@@ -650,70 +604,101 @@ export function Editor({
                     <span>{label("subtotal")}</span>
                     <strong>{totals ? format(totals.subtotal) : "—"}</strong>
                   </div>
-                  <details
-                    className="invoice-adjustments"
-                    open={
-                      Number(doc.discount.value) ||
-                      Number(doc.tax.value) ||
-                      Number(doc.shipping)
-                        ? true
-                        : undefined
-                    }
-                  >
-                    <summary>Tax, discount &amp; shipping</summary>
-                    {(["discount", "tax"] as const).map((key) => (
-                      <div className="adjustment-row" key={key}>
-                        <span>{label(key)}</span>
-                        <div>
-                          <input
-                            aria-label={labels[key]}
-                            inputMode="decimal"
-                            value={doc[key].value}
-                            onChange={(e) =>
-                              update(key, {
-                                ...doc[key],
-                                value: e.target.value,
-                              })
-                            }
-                          />
-                          <select
-                            aria-label={`${labels[key]} type`}
-                            value={doc[key].type}
-                            onChange={(e) =>
-                              update(key, {
-                                ...doc[key],
-                                type: e.target.value as "percent" | "fixed",
-                              })
-                            }
-                          >
-                            <option value="percent">%</option>
-                            <option value="fixed">{doc.currency}</option>
-                          </select>
+                  <div className="invoice-adjustments">
+                    {(["discount", "tax"] as const)
+                      .filter(
+                        (key) =>
+                          key === "tax" ||
+                          showDiscount ||
+                          Number(doc.discount.value),
+                      )
+                      .map((key) => (
+                        <div className="adjustment-row" key={key}>
+                          <span>{label(key)}</span>
+                          <div>
+                            <input
+                              aria-label={labels[key]}
+                              inputMode="decimal"
+                              value={doc[key].value}
+                              onChange={(e) =>
+                                update(key, {
+                                  ...doc[key],
+                                  value: e.target.value,
+                                })
+                              }
+                            />
+                            <span
+                              className="adjustment-unit"
+                              aria-hidden="true"
+                            >
+                              {doc[key].type === "percent"
+                                ? "%"
+                                : currencySymbol}
+                            </span>
+                            <button
+                              className="adjustment-toggle"
+                              aria-label={`Switch ${labels[key]} to ${doc[key].type === "percent" ? "fixed amount" : "percentage"}`}
+                              title={`Switch to ${doc[key].type === "percent" ? "fixed amount" : "percentage"}`}
+                              onClick={() =>
+                                update(key, {
+                                  ...doc[key],
+                                  type:
+                                    doc[key].type === "percent"
+                                      ? "fixed"
+                                      : "percent",
+                                })
+                              }
+                            >
+                              <RefreshCw size={16} />
+                            </button>
+                          </div>
                         </div>
+                      ))}
+                    {(showShippingCharge || Number(doc.shipping) > 0) && (
+                      <div className="adjustment-row">
+                        <span>{label("shipping")}</span>
+                        <input
+                          inputMode="decimal"
+                          aria-label="Shipping charge"
+                          value={doc.shipping}
+                          onChange={(e) => update("shipping", e.target.value)}
+                        />
                       </div>
-                    ))}
-                    <div className="adjustment-row">
-                      <span>{label("shipping")}</span>
-                      <input
-                        inputMode="decimal"
-                        aria-label="Shipping charge"
-                        value={doc.shipping}
-                        onChange={(e) => update("shipping", e.target.value)}
-                      />
+                    )}
+                    <div className="adjustment-add">
+                      {!showDiscount && !Number(doc.discount.value) && (
+                        <button
+                          className="text-button"
+                          onClick={() => setShowDiscount(true)}
+                        >
+                          <Plus size={14} /> Discount
+                        </button>
+                      )}
+                      {!showShippingCharge && !Number(doc.shipping) && (
+                        <button
+                          className="text-button"
+                          onClick={() => setShowShippingCharge(true)}
+                        >
+                          <Plus size={14} /> Shipping
+                        </button>
+                      )}
                     </div>
-                  </details>
-                  <div className="total-row">
+                  </div>
+                  <div className="total-row total-emphasis">
                     <span>{label("total")}</span>
                     <strong>{totals ? format(totals.total) : "—"}</strong>
                   </div>
                   <div className="adjustment-row">
                     <span>{label("amountPaid")}</span>
-                    <input
-                      inputMode="decimal"
-                      aria-label="Amount paid"
-                      value={doc.amountPaid}
-                      onChange={(e) => update("amountPaid", e.target.value)}
-                    />
+                    <div className="money-input">
+                      <span aria-hidden="true">{currencySymbol}</span>
+                      <input
+                        inputMode="decimal"
+                        aria-label="Amount paid"
+                        value={doc.amountPaid}
+                        onChange={(e) => update("amountPaid", e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div className="total-row balance">
                     <span>{label("balanceDue")}</span>
@@ -788,7 +773,11 @@ export function Editor({
         </div>
         <aside className="editor-aside" aria-label="Invoice controls">
           <div className="editor-status">
-            Status{" "}
+            {dirty ? (
+              <span role="status">Unsaved changes</span>
+            ) : (
+              <span>Status</span>
+            )}{" "}
             <strong className={`badge ${saved?.status || "draft"}`}>
               {saved?.archivedAt ? "Archived" : saved?.status || "Draft"}
             </strong>
@@ -810,7 +799,7 @@ export function Editor({
                 })
               }
             >
-              <Download size={16} /> PDF
+              <Download size={16} /> Download
             </button>
             {editable && (
               <button
@@ -848,8 +837,8 @@ export function Editor({
               <>
                 <p>
                   {saved?.archivedAt
-                    ? "Restore it to make it available again. Previous share links stay revoked."
-                    : "Share the invoice, record a payment, or create a new draft from it."}
+                    ? "Restore it to make it available again."
+                    : "Download the invoice, record a payment, or create a new draft from it."}
                 </p>
                 {saved?.archivedAt ? (
                   <button
@@ -871,25 +860,6 @@ export function Editor({
                         }}
                       >
                         <Check size={16} /> Record payment
-                      </button>
-                    )}
-                    <button
-                      className="button primary full"
-                      disabled={busy}
-                      onClick={() => void share()}
-                    >
-                      <Link2 size={16} />
-                      {saved?.shared
-                        ? "Generate new link"
-                        : "Create share link"}
-                    </button>
-                    {saved?.shared && (
-                      <button
-                        className="button full"
-                        disabled={busy}
-                        onClick={() => void revoke()}
-                      >
-                        <Unlink size={16} /> Revoke share link
                       </button>
                     )}
                   </>
@@ -937,7 +907,7 @@ export function Editor({
                         onClick={() => {
                           if (
                             window.confirm(
-                              "Void this invoice? Its details will be preserved and any share link will show VOID.",
+                              "Void this invoice? Its details will be preserved.",
                             )
                           )
                             void action("void");
@@ -949,34 +919,6 @@ export function Editor({
                   </>
                 )}
               </>
-            )}
-            {shareUrl && (
-              <div className="share-result">
-                <label>
-                  Customer link
-                  <input
-                    readOnly
-                    value={shareUrl}
-                    onFocus={(e) => e.target.select()}
-                  />
-                </label>
-                <button
-                  className="button full"
-                  onClick={() =>
-                    void navigator.clipboard
-                      .writeText(shareUrl)
-                      .then(() => notify("Link copied."))
-                      .catch(() =>
-                        notify("Select the link and copy it manually.", true),
-                      )
-                  }
-                >
-                  <Copy size={14} /> Copy link
-                </button>
-                <a href={shareUrl} target="_blank" rel="noreferrer">
-                  Open customer view ↗
-                </a>
-              </div>
             )}
           </div>
           <fieldset
@@ -1056,7 +998,7 @@ export function Editor({
           onClose={() => setConfirmIssue(false)}
         >
           <p>
-            Issuing locks the billing details. You can then share the invoice or
+            Issuing locks the billing details. You can then download the PDF or
             record a payment.
           </p>
           <div className="modal-actions">

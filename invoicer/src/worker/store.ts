@@ -4,7 +4,8 @@ import { AppError, brandingSchema, calculate, defaultSettings, documentSchema, f
 import { canonical, sha } from './http';
 
 export interface InvoiceRow { id: string; state: 'draft' | 'issued' | 'void'; number: string | null; document: string; totals: string; amount_paid: number; revision: number; archived_at: string | null; created_at: string; updated_at: string; shared: number }
-const invoiceSelect = 'SELECT invoices.*, EXISTS(SELECT 1 FROM shares WHERE invoice_id = invoices.id) AS shared FROM invoices';
+// Retain the response field for API compatibility; public sharing is disabled.
+const invoiceSelect = 'SELECT invoices.*, 0 AS shared FROM invoices';
 export function present(row: InvoiceRow): Invoice {
   const document = documentSchema.parse(JSON.parse(row.document));
   const totals: Totals = JSON.parse(row.totals);

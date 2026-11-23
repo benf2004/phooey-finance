@@ -20,6 +20,10 @@ Stable `(account_id, provider_id)` keys prevent bank duplicates. Pending transac
 
 ## Security and authorization
 
+New self-hosted installations use a random `ADMIN_KEY` of at least 32 characters. Login uses a timing-safe comparison of SHA-256 digests and creates a hashed, expiring browser session. Rotating the key invalidates those sessions. The [combined edition](self-hosted.md) mounts the existing Invoicer services under `/invoicer/`, shares Finance's browser session, and passes owner authorization internally only after checking that session and the mutation origin. Explicit Invoicer bearer credentials retain their original business scope. Each app keeps its own database. Hosted identity, billing and account-management services are not part of the combined Worker.
+
+Legacy password installations remain supported:
+
 There is one administrator initialized through server secrets: username, bcrypt password hash and encryption key. Settings can replace the password with a cost-12 bcrypt hash stored separately from financial data in D1. A fingerprint of the server credentials ties the override to that configuration, preserving secret rotation as an administrator recovery mechanism. Password changes require the current password and a same-origin browser session, are rate limited, and atomically verify the credential/session snapshot, replace the hash, invalidate browser sessions, and create a fresh current session. Session tokens and MCP tokens are stored only as hashes. Sessions last one day and are invalidated when admin credentials change. Cookies are HttpOnly and SameSite=Strict, with Secure on HTTPS. Mutations validate Origin; login attempts and OAuth endpoints are rate limited.
 
 OAuth uses authorization codes with PKCE S256, exact registered redirects, single-use codes and resource-bound access. MCP tokens carry explicit scopes and are revoked in Settings. They cannot use ordinary dashboard API endpoints; authenticated export downloads are an intentional exception. MCP writes use the same validation, revisions and audit services as the dashboard.

@@ -96,5 +96,26 @@ describe("bank sync progress", () => {
     expect(
       render([{ ...job, status: "complete", error: "Missing history" }]),
     ).toContain("Complete with warnings");
+    const complete = render([
+      {
+        ...job,
+        status: "complete",
+        syncProgress: syncJobProgress(
+          {
+            ...payload,
+            processedRecords: 12,
+            transactionsFrom: "2026-03-01",
+            transactionsTo: "2026-04-01",
+          },
+          "complete",
+        ),
+      },
+    ]);
+    expect(complete).toContain("Requested: 2026-01-01");
+    expect(complete).toContain("Posted transactions returned: 2026-03-01");
+    expect(complete).toContain("import a bank CSV");
+    expect(render([{ ...job, status: "complete" }])).toContain(
+      "No transactions were returned for the requested dates.",
+    );
   });
 });

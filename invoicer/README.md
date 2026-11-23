@@ -1,6 +1,8 @@
 # Invoicer
 
-A small, open-source invoice workspace for one business, hosted entirely on your own Cloudflare account. Create branded invoices in the dashboard or generate PDFs on demand through a REST API.
+A small, open-source invoice workspace for your businesses, hosted entirely on your own Cloudflare account. Create branded invoices in the dashboard or generate PDFs on demand through a REST API. The self-hosted version uses the same editor, features, REST API and MCP server as the hosted edition, with one admin key.
+
+To run Finance and Invoicer together with a shared admin-key sign-in, follow the [combined self-hosting guide](../docs/self-hosted.md). The instructions below deploy Invoicer independently.
 
 **Multiple businesses, editable invoices, and business-scoped API keys on Cloudflare Workers + D1.** AGPL-3.0-only licensed; bundled fonts have their own OFL license.
 
@@ -10,10 +12,9 @@ A small, open-source invoice workspace for one business, hosted entirely on your
 - Classic and Modern templates, your logo, accent color, Noto Sans/Serif/Mono, editable labels, optional sections, custom fields, and A4/Letter.
 - Named branding presets with a default, reusable customers, business settings, search/status filters, and paginated invoice history.
 - Draft → issued → paid/void, manual cumulative payments, duplication, archiving and restoration. Issued details are immutable snapshots.
-- Optional, revocable customer links for viewing, printing and downloading. A new link invalidates the previous link; archiving revokes links permanently.
 - Bearer-authenticated REST API with OpenAPI 3.1, creation idempotency, revision checks and an entirely stateless PDF endpoint.
 
-Payments, email delivery, reminders, accounting reports, receipt documents, freeform layout design, multiple businesses/users and MCP are outside this version.
+Payment processing, email delivery, reminders, receipt documents, freeform layout design and multiple user accounts are outside this version. Manual payment recording, multiple businesses and MCP are included. Finance provides bookkeeping and accounting reports in the combined deployment.
 
 ## Local development
 
@@ -101,6 +102,126 @@ curl "$INVOICER_URL/api/v1/invoices" \
 
 The example includes `status: "issued"`; omit it or use `draft` to create a draft. Rendering ignores status and does not assign a number. Both modes accept the same invoice input.
 
+### JavaScript and Python examples
+
+Set `INVOICER_URL` and `INVOICER_API_KEY` as described above. Use a read-and-write key and run these examples locally or on your server, keeping keys out of browser code.
+
+#### JavaScript (Node.js 22+)
+
+Save as `example.mjs` and run `node example.mjs`. No dependencies required.
+
+```javascript
+import { writeFile } from "node:fs/promises";
+
+const url = process.env.INVOICER_URL?.replace(/\/+$/, "");
+const apiKey = process.env.INVOICER_API_KEY;
+if (!url || !apiKey) throw new Error("Set INVOICER_URL and INVOICER_API_KEY");
+
+const response = await fetch(url + "/api/v1/render", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer " + apiKey,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    billTo: { name: "Acme Ltd" },
+    items: [{ description: "Design services", quantity: "2.5", rate: "120" }],
+  }),
+});
+
+if (!response.ok) {
+  throw new Error("HTTP " + response.status + ": " + await response.text());
+}
+await writeFile("invoice.pdf", Buffer.from(await response.arrayBuffer()));
+console.log("Saved invoice.pdf");
+```
+
+#### Python
+
+Install Requests with `python3 -m pip install requests`, save as `example.py`, and run `python3 example.py`.
+
+```python
+import os
+from pathlib import Path
+import requests
+
+url = os.environ["INVOICER_URL"].rstrip("/")
+api_key = os.environ["INVOICER_API_KEY"]
+
+response = requests.post(
+    f"{url}/api/v1/render",
+    headers={
+        "Authorization": f"Bearer {api_key}",
+    },
+    json={
+        "billTo": {"name": "Acme Ltd"},
+        "items": [{"description": "Design services", "quantity": "2.5", "rate": "120"}],
+    },
+    timeout=60,
+)
+if not response.ok:
+    raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
+Path("invoice.pdf").write_bytes(response.content)
+print("Saved invoice.pdf")
+```
+
+#### Save a draft instead
+
+Set `INVOICER_IDEMPOTENCY_KEY` to a unique value for this invoice (for example, `order-1042-invoice`). Reuse it for retries with the same payload; use a new value for each new invoice.
+
+```javascript
+const url = process.env.INVOICER_URL?.replace(/\/+$/, "");
+const apiKey = process.env.INVOICER_API_KEY;
+if (!url || !apiKey) throw new Error("Set INVOICER_URL and INVOICER_API_KEY");
+const idempotencyKey = process.env.INVOICER_IDEMPOTENCY_KEY;
+if (!idempotencyKey) throw new Error("Set INVOICER_IDEMPOTENCY_KEY");
+
+const response = await fetch(url + "/api/v1/invoices", {
+  method: "POST",
+  headers: {
+    Authorization: "Bearer " + apiKey,
+    "Content-Type": "application/json",
+    "Idempotency-Key": idempotencyKey,
+  },
+  body: JSON.stringify({
+    billTo: { name: "Acme Ltd" },
+    items: [{ description: "Design services", quantity: "2.5", rate: "120" }],
+  }),
+});
+
+if (!response.ok) {
+  throw new Error("HTTP " + response.status + ": " + await response.text());
+}
+const invoice = await response.json();
+console.log(invoice.id, invoice.revision);
+```
+
+```python
+import os
+import requests
+
+url = os.environ["INVOICER_URL"].rstrip("/")
+api_key = os.environ["INVOICER_API_KEY"]
+idempotency_key = os.environ["INVOICER_IDEMPOTENCY_KEY"]
+
+response = requests.post(
+    f"{url}/api/v1/invoices",
+    headers={
+        "Authorization": f"Bearer {api_key}",
+        "Idempotency-Key": idempotency_key,
+    },
+    json={
+        "billTo": {"name": "Acme Ltd"},
+        "items": [{"description": "Design services", "quantity": "2.5", "rate": "120"}],
+    },
+    timeout=60,
+)
+if not response.ok:
+    raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
+invoice = response.json()
+print(invoice["id"], invoice["revision"])
+```
+
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /render` | Return a PDF without persistence. |
@@ -112,7 +233,6 @@ The example includes `status: "issued"`; omit it or use `draft` to create a draf
 | `POST /invoices/{id}/payment` | Set cumulative `amountPaid`, not an incremental payment. |
 | `POST /invoices/{id}/void` | Mark an issued/paid invoice void; preserve its details. |
 | `POST /invoices/{id}/archive` or `/restore` | Archive/restore a record. |
-| `POST/DELETE /invoices/{id}/share` | Generate/rotate or revoke a customer link. |
 | `GET/POST /customers`, `PUT/DELETE /customers/{id}` | Manage customer details; deletion archives the directory entry. |
 | `GET/POST /presets`, `PUT/DELETE /presets/{id}` | Manage styles; deletion clears a default but preserves invoice snapshots. |
 | `GET/PUT /settings` | Manage business defaults and numbering. |
@@ -153,7 +273,7 @@ JSON bodies are capped at 1 MiB, line items at 200, custom fields at 20. Large v
 - Rotating `ADMIN_KEY` via `npx wrangler secret put ADMIN_KEY` invalidates existing sessions on their next request. Clients using the owner key must use the new key; revoke business API keys separately in API & MCP.
 - Customer URLs are bearer capabilities: anyone holding a link can read that invoice. Only a token hash is stored. Revocation also blocks PDF downloads. Restoring an archived invoice does not revive old links.
 - Customer and API responses use `no-store`, `noindex` and `no-referrer`. No third-party page assets, analytics or rendering requests are used. The bundled PDF viewer does not execute PDF JavaScript.
-- Worker error logs omit request bodies and identifiers. Cloudflare's request metadata may include share URL paths; restrict access to platform logs and database exports.
+- Worker error logs omit request bodies and identifiers. Restrict access to platform logs and database exports.
 - `GET /health` checks D1 availability. Use Workers observability for errors and actual production CPU duration.
 
 ### Backup and restore
@@ -183,7 +303,7 @@ npm run test:integration
 npm run check:deploy
 ```
 
-The integration suite provisions a fresh temporary local database and Worker, tests auth/CSRF, concurrency, state transitions, snapshot isolation, sharing and stateless generation, then cleans up. It requires an available localhost port 8791 and permission to run workerd. It never deploys or uses a remote binding. PDF tests create ignored fixtures in `test-results/pdfs` for visual inspection.
+The integration suite provisions a fresh temporary local database and Worker, tests auth/CSRF, concurrency, state transitions, snapshot isolation, disabled public links and stateless generation, then cleans up. It requires an available localhost port 8791 and permission to run workerd. It never deploys or uses a remote binding. PDF tests create ignored fixtures in `test-results/pdfs` for visual inspection.
 
 ## License and acknowledgments
 

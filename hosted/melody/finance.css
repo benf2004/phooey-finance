@@ -5,10 +5,10 @@
   font-display: swap;
 }
 .finance-auth {
-  --ink: #203a32;
-  --muted: #50665f;
-  --rule: #cad5cd;
-  --paper: #f6f5ef;
+  --ink: #382c36;
+  --muted: #70636d;
+  --rule: #ded5dc;
+  --paper: #f8f5f6;
   --text-width: 100%;
   --primary-button-color: var(--ink);
   --primary-button-border-color: var(--ink);
@@ -25,7 +25,7 @@
   caret-color: var(--ink);
 }
 .finance-auth ::selection {
-  background: #d8e8da;
+  background: #f7d8cc;
 }
 .finance-brand {
   max-width: 1080px;
@@ -87,7 +87,7 @@
   align-items: center;
   min-height: 44px;
   width: 100%;
-  border: 1px solid #879e91;
+  border: 1px solid #a48a9e;
   border-radius: 3px;
   background: white;
   font-weight: 600;
@@ -98,7 +98,7 @@
   height: 20px;
 }
 .finance-passkey:hover {
-  background: #f0f5ef;
+  background: #f3edf2;
 }
 .finance-divider {
   display: flex;
@@ -125,7 +125,7 @@
   font-size: 0.9375rem;
 }
 .finance-content input:not([type="checkbox"]):not([type="radio"]) {
-  border-color: #889e92;
+  border-color: #a48a9e;
   border-radius: 3px;
   min-width: 0;
 }
@@ -155,24 +155,10 @@
   min-height: 40px;
 }
 .finance-auth :is(button, a, input, select):focus-visible {
-  outline: 3px solid #a74b2b;
+  outline: 3px solid #7b4775;
   outline-offset: 3px;
 }
 
-.finance-steps {
-  display: flex;
-  gap: 16px;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: 11px;
-  color: var(--muted);
-  flex-wrap: wrap;
-}
-.finance-steps [aria-current] {
-  color: var(--ink);
-  font-weight: 650;
-}
 .finance-intro {
   color: var(--muted);
   font-size: 15px;
@@ -209,7 +195,7 @@
 }
 .finance-content input {
   min-height: 48px;
-  background: #fffef9;
+  background: #fffdfb;
 }
 .finance-content :is(button, a) {
   transition: background 0.15s;

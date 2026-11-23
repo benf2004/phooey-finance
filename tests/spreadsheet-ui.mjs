@@ -148,11 +148,11 @@ try {
   });
   await cell("Description").click();
   await expect(
-    page.getByRole("dialog", { name: "Edit Description" }),
+    page.getByRole("textbox", { name: "Description", exact: true }),
   ).toHaveCount(0);
   await cell("Description").dblclick();
   await expect(
-    page.getByRole("dialog", { name: "Edit Description" }),
+    page.getByRole("textbox", { name: "Description", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Save cell" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cancel edit" })).toHaveCount(
@@ -162,7 +162,11 @@ try {
     .getByRole("textbox", { name: "Description", exact: true })
     .fill("Updated software subscription");
   await cell("Merchant", 2).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.locator(
+      ".sheet-inline-input, .sheet-dropdown-menu, .sheet-tags-editor",
+    ),
+  ).toHaveCount(0);
   await expect(cell("Description")).toContainText(
     "Updated software subscription",
   );
@@ -187,15 +191,16 @@ try {
   await cell("Tags").press("ArrowRight");
   await expect(cell("Account")).toBeFocused();
   await cell("Account").press("Enter");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.locator(
+      ".sheet-inline-input, .sheet-dropdown-menu, .sheet-tags-editor",
+    ),
+  ).toHaveCount(0);
   await expect(cell("Account")).toHaveAttribute("aria-readonly", "true");
 
   // A multiline edit expands without changing the table's column widths.
   const initialWidth = (await cell("Notes").boundingBox()).width;
   await cell("Notes").dblclick();
-  await page
-    .getByRole("button", { name: "Expand editor", exact: true })
-    .click();
   await page
     .getByRole("textbox", { name: "Notes", exact: true })
     .fill(
@@ -239,13 +244,11 @@ try {
   await cell("Description", 2).click();
   await expect(cell("Tags")).toContainText("Client");
 
-  await cell("Category").dblclick();
+  await cell("Category").getByRole("button").click();
   await page
-    .getByRole("combobox", { name: "Category", exact: true })
-    .selectOption(category.id);
-  await page
-    .getByRole("combobox", { name: "Category", exact: true })
-    .press("Tab");
+    .getByRole("listbox", { name: "Category", exact: true })
+    .getByRole("option", { name: "Office supplies", exact: true })
+    .click();
   await expect(cell("Category")).toContainText("Office supplies");
   // Invalid values remain in the editor; correcting them can be retried without losing the draft.
   await cell("Amount").dblclick();
@@ -255,7 +258,9 @@ try {
   await page
     .getByRole("textbox", { name: "Amount", exact: true })
     .press("Enter");
-  await expect(page.getByRole("alert")).toContainText("Your edit is kept here");
+  await expect(page.getByRole("alert")).toContainText(
+    "Your edit is kept in the cell",
+  );
   await expect(
     page.getByRole("textbox", { name: "Amount", exact: true }),
   ).toHaveValue("invalid");
@@ -265,7 +270,11 @@ try {
   await page
     .getByRole("textbox", { name: "Amount", exact: true })
     .press("Enter");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.locator(
+      ".sheet-inline-input, .sheet-dropdown-menu, .sheet-tags-editor",
+    ),
+  ).toHaveCount(0);
   await expect(cell("Amount")).toContainText("135.25");
 
   // A failed request keeps the draft and allows retry; rapid blur/Tab submits once.
@@ -311,7 +320,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await cell("Notes").dblclick();
   const editorBounds = await page
-    .getByRole("dialog", { name: "Edit Notes" })
+    .getByRole("textbox", { name: "Notes", exact: true })
     .boundingBox();
   expect(editorBounds.x).toBeGreaterThanOrEqual(0);
   expect(editorBounds.x + editorBounds.width).toBeLessThanOrEqual(390);
@@ -320,6 +329,83 @@ try {
     .getByRole("textbox", { name: "Notes", exact: true })
     .press("Escape");
   await page.setViewportSize({ width: 1440, height: 960 });
+  // Date cells retain inline typing alongside a Sheets-style calendar.
+  await cell("Date").dblclick();
+  const calendar = page.getByRole("dialog", {
+    name: "Choose date",
+    exact: true,
+  });
+  await expect(calendar).toBeVisible();
+  await calendar
+    .getByRole("button", { name: "Previous month", exact: true })
+    .click();
+  await expect(calendar).toContainText("October 2026");
+  await calendar
+    .getByRole("button", { name: "October 15, 2026", exact: true })
+    .click();
+  await expect(calendar).toHaveCount(0);
+  await page.reload();
+  const movedDate = sheet.getByRole("gridcell", {
+    name: /^Date, row \d+: 2026-10-15$/,
+  });
+  await expect(movedDate).toBeVisible();
+  await movedDate.dblclick();
+  await page
+    .getByRole("textbox", { name: "Date", exact: true })
+    .fill("2/30/2026");
+  await page.getByRole("textbox", { name: "Date", exact: true }).press("Tab");
+  await expect(
+    page.getByRole("textbox", { name: "Date", exact: true }),
+  ).toHaveAttribute("aria-invalid", "true");
+  await page
+    .getByRole("textbox", { name: "Date", exact: true })
+    .fill("11/22/2026");
+  await page.getByRole("textbox", { name: "Date", exact: true }).press("Enter");
+  await expect(calendar).toHaveCount(0);
+  // A partial draft must not create a server record; completing it creates one.
+  let creates = 0;
+  page.on("request", (request) => {
+    if (
+      request.url().endsWith("/api/transactions") &&
+      request.method() === "POST"
+    )
+      creates++;
+  });
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("Created inside spreadsheet");
+  await page
+    .getByRole("textbox", { name: "Description", exact: true })
+    .press("Tab");
+  expect(creates).toBe(0);
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Amount", exact: true })
+    .fill("-42.50");
+  await page.getByRole("textbox", { name: "Amount", exact: true }).press("Tab");
+  await expect(
+    page.getByRole("textbox", { name: "Amount", exact: true }),
+  ).toHaveCount(0);
+  await expect.poll(() => creates).toBe(1);
+  await page.reload();
+  const createdDescription = sheet.getByRole("gridcell", {
+    name: /^Description, row \d+: Created inside spreadsheet$/,
+  });
+  await expect(createdDescription).toBeVisible();
+  await createdDescription.dblclick();
+  await page
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("New row edited successfully");
+  await page
+    .getByRole("textbox", { name: "Description", exact: true })
+    .press("Tab");
+  await page.reload();
+  await expect(
+    sheet.getByRole("gridcell", {
+      name: /^Description, row \d+: New row edited successfully$/,
+    }),
+  ).toBeVisible();
   await page.goto(url + "/accounts");
   await page.getByRole("button", { name: "Spreadsheet", exact: true }).click();
   const accountCell = page.getByRole("gridcell", { name: /^Account, row 1:/ });
@@ -331,6 +417,19 @@ try {
     .getByRole("textbox", { name: "Account", exact: true })
     .press("Tab");
   await expect(accountCell).toContainText("Studio operating");
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Account", exact: true })
+    .fill("Petty cash from spreadsheet");
+  await page
+    .getByRole("textbox", { name: "Account", exact: true })
+    .press("Tab");
+  await page.reload();
+  await expect(
+    page.getByRole("gridcell", {
+      name: /^Account, row \d+: Petty cash from spreadsheet$/,
+    }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
   console.log(
     "Spreadsheet UI checks passed: selection, double-click, autosave, keyboard, multiline, wrapping, tags, dropdowns, read-only cells, validation, retry, persistence, mobile, and accounts.",

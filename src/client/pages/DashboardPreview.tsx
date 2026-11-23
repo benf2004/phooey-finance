@@ -1,6 +1,6 @@
 import { LayoutDashboard, ArrowLeftRight, Landmark, Tags, Settings, FileText, Search, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
-import { Panel } from "../ui";
+import { Modal, Panel } from "../ui";
 import { formatMoney } from "../../shared/money";
 import {
   CashFlowChart,
@@ -88,6 +88,9 @@ export default function DashboardPreview() {
   function showTransactions(value: string) {
     setSection("Transactions");
     setFilter(value);
+    setAccount("All accounts");
+    setSearch("");
+    setReviewOnly(false);
     document
       .getElementById("transactions")
       ?.scrollIntoView({ block: "nearest" });
@@ -96,7 +99,7 @@ export default function DashboardPreview() {
     <div className="preview-shell"><aside className="preview-sidebar"><a className="preview-logo" href="/business/"><img src="/business/assets/phooey.svg" alt="phooey!"/> finance</a><div className="preview-business"><strong>{businessName}</strong><small>Example business · USD</small></div><nav aria-label="Preview navigation">{nav.map(n => <button key={n.name} aria-current={section === n.name ? "page" : undefined} onClick={() => {setSection(n.name);setSelected(undefined);}}><n.icon size={18}/>{n.name}</button>)}<a href="https://getinvoicer.phooey.foo/"><FileText size={18}/> Invoicer <ArrowUpRight size={14}/></a></nav><a className="preview-signup" href="https://finance.phooey.foo/cloud/signup">Start free trial <ArrowUpRight size={15}/></a></aside><main className="dashboard-preview explorer">
       <header className="preview-brand">
         <span>Interactive preview · Fictional data</span>
-<button onClick={() => {setRecords(initialRecords);setBusinessName("Northline Studio");setFilter("All transactions");setSearch("");setReviewOnly(false);setAccount("All accounts");setSelected(undefined);}}>Reset preview</button><a href={dashboard}>Open dashboard</a>
+<button onClick={() => {setQuarter("all");setView("Line");setGrouping("Monthly");setSection("Overview");setRecords(initialRecords);setBusinessName("Northline Studio");setFilter("All transactions");setSearch("");setReviewOnly(false);setAccount("All accounts");setSelected(undefined);}}>Reset preview</button><a href={dashboard}>Open dashboard</a>
       </header>
       <header className="explorer-header">
         <div>
@@ -149,12 +152,12 @@ export default function DashboardPreview() {
           theme="light"
         />
       </section>
-      <div className="preview-review-strip"><span><strong>{rows.filter(r => !r.reviewed).length}</strong> transaction{rows.filter(r => !r.reviewed).length === 1 ? "" : "s"} to review</span><button onClick={() => {setReviewOnly(true);setSection("Transactions");}}>Review transactions →</button><span>{records.length} sample transactions · 2 accounts</span></div></>}
+      <div className="preview-review-strip"><span><strong>{rows.filter(r => !r.reviewed).length}</strong> transaction{rows.filter(r => !r.reviewed).length === 1 ? "" : "s"} to review</span><button onClick={() => {showTransactions("All transactions");setReviewOnly(true);}}>Review transactions →</button><span>{records.length} sample transactions · 2 accounts</span></div></>}
       {(section === "Overview" || section === "Transactions") && <div className={section === "Overview" ? "explorer-lower" : "preview-register"}>
         <div id="transactions">
           <Panel
-            title="Transactions"
-            action={
+            title={section === "Overview" ? "Recent transactions" : "Transactions"}
+            action={section === "Overview" ? <button className="preview-row-link" onClick={() => showTransactions("All transactions")}>View all <ArrowUpRight size={14}/></button> :
               <select
                 aria-label="Filter transactions"
                 value={filter}
@@ -178,18 +181,18 @@ export default function DashboardPreview() {
                   <tr>
                     <th>Date</th>
                     <th>Description</th>
-                    <th>Category</th><th>Account</th><th>Amount</th><th>Review</th>
+                    <th>Category</th><th>Account</th><th className="preview-amount">Amount</th><th>Review</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((r) => (
+                  {(section === "Overview" ? rows.slice(0, 8) : entries).map((r) => (
                     <tr key={r.date}>
                       <td>{r.date.slice(5)}</td>
                       <td><button className="preview-row-link" onClick={() => setSelected(r.id)}>{r.description}</button></td><td>{r.category}</td><td>{r.account}</td>
-                      <td className={r.amount > 0 ? "preview-income" : ""}>{formatMoney(r.amount)}</td><td><button className="preview-review" aria-label={`Mark ${r.description} ${r.date} ${r.reviewed ? "unreviewed" : "reviewed"}`} aria-pressed={r.reviewed} onClick={() => setRecords(old => old.map(x => x.id === r.id ? {...x,reviewed:!x.reviewed} : x))}>{r.reviewed ? "Reviewed" : "To review"}</button></td>
+                      <td className={`preview-amount ${r.amount > 0 ? "preview-income" : ""}`}>{formatMoney(r.amount)}</td><td><button className="preview-review" aria-label={`Mark ${r.description} ${r.date} ${r.reviewed ? "unreviewed" : "reviewed"}`} aria-pressed={r.reviewed} onClick={() => setRecords(old => old.map(x => x.id === r.id ? {...x,reviewed:!x.reviewed} : x))}>{r.reviewed ? "Reviewed" : "To review"}</button></td>
                     </tr>
                   ))}
-                  {!entries.length && <tr><td colSpan={6}>No transactions match these filters.</td></tr>}
+                  {!(section === "Overview" ? rows : entries).length && <tr><td colSpan={6}>No transactions match these filters.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -212,9 +215,9 @@ export default function DashboardPreview() {
         </Panel>}
       </div>}
       {section === "Accounts" && <Panel title="Business accounts"><div className="preview-account-grid">{['Business checking','Business card'].map((name,i) => { const movements = records.filter(r => r.account === name); const balance = (i ? 0 : 250000) + movements.reduce((sum,r) => sum+r.amount,0); return <button key={name} onClick={() => {setAccount(name);setFilter("All transactions");setSearch("");setReviewOnly(false);setSection("Transactions");}}><Landmark size={22}/><h2>{name}</h2><p>{i ? 'Credit card · Example Bank' : 'Checking · Example Bank'}</p><strong>{formatMoney(balance)}</strong><small>{movements.length} transactions · View activity →</small></button>; })}</div></Panel>}
-      {section === "Categories" && <Panel title="Categories"><table className="flow-register"><thead><tr><th>Category</th><th>Type</th><th>Transactions</th><th>Period total</th></tr></thead><tbody>{['Client services','Production','Software','Office supplies'].map(name => { const matching = rows.filter(r => r.category === name); return <tr key={name}><td><button className="preview-row-link" onClick={() => {setAccount("All accounts");setReviewOnly(false);setSearch("");showTransactions(name);}}>{name}</button></td><td>{name === 'Client services' ? 'Income' : 'Expense'}</td><td>{matching.length}</td><td>{formatMoney(matching.reduce((sum,r) => sum+Math.abs(r.amount),0))}</td></tr>; })}</tbody></table></Panel>}
+      {section === "Categories" && <Panel title="Categories"><div className="table-scroll"><table className="flow-register"><thead><tr><th>Category</th><th>Type</th><th>Transactions</th><th>Period total</th></tr></thead><tbody>{['Client services','Production','Software','Office supplies'].map(name => { const matching = rows.filter(r => r.category === name); return <tr key={name}><td><button className="preview-row-link" onClick={() => {setAccount("All accounts");setReviewOnly(false);setSearch("");showTransactions(name);}}>{name}</button></td><td>{name === 'Client services' ? 'Income' : 'Expense'}</td><td>{matching.length}</td><td>{formatMoney(matching.reduce((sum,r) => sum+Math.abs(r.amount),0))}</td></tr>; })}</tbody></table></div></Panel>}
       {section === "Settings" && <Panel title="Business settings"><div className="preview-settings"><label>Business name<input value={businessName} onChange={e => setBusinessName(e.target.value)} maxLength={100}/></label><p>Changes here stay in this preview. Refresh or reset to start again.</p><h2>Bring your own records</h2><p>In your workspace, import CSV files, add transactions by hand, or connect optional bank syncing.</p><a href="https://finance.phooey.foo/cloud/signup">Create your workspace →</a><h2>Invoicing</h2><p>Manage clients, draft invoices, and track payments in the companion app.</p><a href="https://getinvoicer.phooey.foo/">Explore Invoicer →</a></div></Panel>}
-      {selectedRecord && <div className="preview-detail" role="dialog" aria-label="Transaction details" onKeyDown={e => {if(e.key === 'Escape') setSelected(undefined);}}><div><button className="preview-close" onClick={() => setSelected(undefined)} autoFocus>Close ×</button><h2>{selectedRecord.description}</h2><p>{selectedRecord.date} · {selectedRecord.account}</p><strong>{formatMoney(selectedRecord.amount)}</strong><label>Category<select value={selectedRecord.category} onChange={e => setRecords(old => old.map(r => r.id === selected ? {...r,category:e.target.value} : r))}>{['Client services','Production','Software','Office supplies'].map(c => <option key={c}>{c}</option>)}</select></label><label><input type="checkbox" checked={selectedRecord.reviewed} onChange={e => setRecords(old => old.map(r => r.id === selected ? {...r,reviewed:e.target.checked} : r))}/> Reviewed</label><p>Edits update the sample reports immediately.</p></div></div>}
+      {selectedRecord && <Modal title={selectedRecord.description} onClose={() => setSelected(undefined)} className="preview-detail"><div><p>{selectedRecord.date} · {selectedRecord.account}</p><strong>{formatMoney(selectedRecord.amount)}</strong><label>Category<select value={selectedRecord.category} onChange={e => setRecords(old => old.map(r => r.id === selected ? {...r,category:e.target.value} : r))}>{['Client services','Production','Software','Office supplies'].map(c => <option key={c}>{c}</option>)}</select></label><label><input type="checkbox" checked={selectedRecord.reviewed} onChange={e => setRecords(old => old.map(r => r.id === selected ? {...r,reviewed:e.target.checked} : r))}/> Reviewed</label><p>Edits update the sample reports immediately.</p></div></Modal>}
     </main></div>
   );
 }

@@ -72,6 +72,7 @@ async function route(req: Request, env: HostedEnv, ctx: ExecutionContext) {
   const url = new URL(req.url),
     p = url.pathname,
     isPortal = !env.WORKSPACE_ID;
+  if (/^\/invoicer\/s(?:\/|$)/.test(p)) return new Response("Invoice link unavailable", {status:404,headers:{"Cache-Control":"no-store"}});
   if (isPortal && env.INVOICER_MARKETING_ORIGIN === url.origin) {
     if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", {status:405});
     if (p === "/") return env.ASSETS.fetch(new Request(new URL("/business/invoicer/",url),req));
@@ -94,8 +95,8 @@ async function route(req: Request, env: HostedEnv, ctx: ExecutionContext) {
     404,
     "Unknown workspace.",
   );
-  // Browser navigation stays on the app domain; old API, mobile, OAuth and
-  // public invoice URLs remain valid for existing integrations and recipients.
+  // Browser navigation stays on the app domain; old API, mobile and OAuth
+  // URLs remain valid for existing integrations.
   if (!isPortal && !appWorkspace && env.CANONICAL_APP === "true" && read &&
       !publicInvoiceRead(req, p) && !p.startsWith("/api/") &&
       !p.startsWith("/invoicer/api/") && !p.startsWith("/invoicer/auth/") &&
@@ -397,8 +398,7 @@ async function route(req: Request, env: HostedEnv, ctx: ExecutionContext) {
   }
   if (p === "/invoicer") return redirect("/invoicer/");
   if (p.startsWith("/invoicer/")) {
-    // Shared invoices must retain a workspace-specific address so recipients
-    // can open them without an account or a workspace-selection cookie.
+    // Preserve the workspace origin when forwarding bundled app requests.
     const invoiceRequest = appWorkspace && url.origin !== invoiceOrigin(env)
       ? new Request(new URL(p + url.search, slot.origin), req)
       : req;

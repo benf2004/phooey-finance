@@ -99,12 +99,18 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    ref.current?.showModal();
-    return () => ref.current?.close();
+    const dialog = ref.current;
+    const previousFocus = document.activeElement;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
   }, []);
   return (
     <dialog
       ref={ref}
+      aria-label={title}
       className={`modal ${wide ? "wide" : ""} ${className}`}
       onCancel={(e) => {
         e.preventDefault();

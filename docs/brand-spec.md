@@ -10,13 +10,15 @@ Design read: practical business software for solo operators. Familiar layouts (v
 
 ## Tokens
 
-- Canvas #f6f5ef; paper #fffef9; Finance ink #203a32; muted #606b63; rules #d6dad1.
-- Finance primary #265e49; soft sage #c8d9b6. Invoicer primary #85513b; ink #302e27; muted #68675e.
+- Canvas #f8f5f6; paper #fffdfb; ink #382c36; muted #70636d; rules #ded5dc.
+- Finance and Invoicer primary plum #4b2948; hover #3b2039; peach #e9997f; soft plum #f0e5ef; soft peach #f7d8cc. Dark interfaces use peach accents on muted plum surfaces. Keep income, expense, warning, and error colors semantic.
 - DM Sans, locally hosted. Medium-weight headings, tabular figures. Headings 32–62px on public surfaces; 24–38px in tools. Small supporting text does not compete with actions.
 - 4px spacing base; primary groups 24/32/48/64px. 3–4px corners; thin borders; no ornamental shadows. 150ms background state transitions; respect reduced motion.
 - Account settings use 28–36px page headings and 18px section headings. Security settings pair descriptions and status with controls in divided rows, stacking on phones. Use one clear reauthentication prompt above locked controls. Keep provider credits and duplicate passkey banners off the sign-in page.
 
 ## Brand assets
+
+- Wordmark palette: plum #4b2948 lettering and peach #e9997f exclamation mark. Dark variants retain light #f5f4e8 lettering with peach punctuation. The app icon uses plum with a peach mark. Preserve all existing SVG geometry.
 
 - Finance light wordmark: public/business/assets/wordmark.svg.
 - Finance dark wordmark: public/business/assets/wordmark-dark.svg.

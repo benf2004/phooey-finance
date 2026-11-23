@@ -30,6 +30,7 @@ import {
   errorMessage,
 } from "./util";
 import { foundationData } from "./foundation";
+import { checkSyncHistory } from "./sync-history";
 import { budgetKey } from "../shared/foundation";
 import { Ledger } from "./ledger";
 import { dateSchema, defaultMcpTokenDays, scopeSchema, filterSchema, transactionFieldSchema } from "../shared/models";
@@ -448,6 +449,10 @@ app.post("/api/sync", async (c) => {
     .object({ start: dateSchema.optional() })
     .parse(await readJSON(c.req.raw));
   return c.json(await requestSync(c.env, body.start));
+});
+app.post("/api/sync/check-history", async (c) => {
+  const body = z.object({ start: dateSchema }).parse(await readJSON(c.req.raw));
+  return c.json(await checkSyncHistory(c.env, body.start));
 });
 app.delete("/api/sync", async (c) => {
   await c.env.DB.batch([

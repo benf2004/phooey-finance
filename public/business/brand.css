@@ -10,15 +10,15 @@
     Helvetica,
     Arial,
     sans-serif;
-  color: #203a32;
-  background: #f6f5ef;
+  color: #382c36;
+  background: #f8f5f6;
   font-variant-numeric: tabular-nums;
-  --green: #265e49;
-  --ink: #203a32;
-  --muted: #606b63;
-  --line: #d6dad1;
-  --paper: #fffef9;
-  --accent: #c8d9b6;
+  --green: #4b2948;
+  --ink: #382c36;
+  --muted: #70636d;
+  --line: #ded5dc;
+  --paper: #fffdfb;
+  --accent: #e9997f;
   --error: #963c28;
 }
 * {
@@ -106,7 +106,7 @@ p {
 h1,
 h2 {
   font-weight: 500;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
   line-height: 1.08;
   text-wrap: balance;
 }
@@ -176,7 +176,7 @@ button {
 }
 .button:hover,
 button:hover {
-  background: #1b4937;
+  background: #3b2039;
   text-decoration: none;
 }
 .hero .button,
@@ -185,7 +185,7 @@ nav .button {
   color: var(--ink);
 }
 .hero .button:hover {
-  background: #b9cfa3;
+  background: #df8c72;
 }
 .button-secondary {
   background: transparent;
@@ -193,14 +193,14 @@ nav .button {
   border-color: var(--line);
 }
 .button-secondary:hover {
-  background: #e9ede2;
+  background: #f3edf2;
 }
 button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 :is(a, button, input, select, summary, [tabindex]):focus-visible {
-  outline: 3px solid #997039;
+  outline: 3px solid #7b4775;
   outline-offset: 4px;
 }
 .band {
@@ -226,7 +226,7 @@ button:disabled {
 .price {
   font-size: 52px;
   font-weight: 500;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
   line-height: 1.2;
   color: var(--ink);
 }
@@ -268,7 +268,7 @@ small {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 3px;
-  transform: translateY(12px);
+  align-self: center;
 }
 .sample-report figcaption,
 .sample-report dl,
@@ -284,7 +284,7 @@ small {
 .sample-report figcaption span,
 .sample-report dt,
 .sample-legend {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-weight: 400;
 }
@@ -401,7 +401,7 @@ pre {
 }
 .form-success {
   color: var(--green);
-  background: #e6eddf;
+  background: #f0e5ef;
 }
 .account-main {
   padding-top: 52px;
@@ -469,7 +469,7 @@ pre {
 }
 .account-main #setup-secret {
   display: block;
-  background: #edf0e6;
+  background: #f3edf2;
   padding: 16px;
   border: 1px solid var(--line);
   overflow-wrap: anywhere;
@@ -481,20 +481,6 @@ pre {
   border-top: 1px solid var(--line);
   margin-top: 24px;
   padding-top: 24px;
-}
-.setup-steps {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  gap: 24px;
-  padding: 0;
-  margin: 0 0 32px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.setup-steps [aria-current] {
-  color: var(--green);
-  font-weight: 600;
 }
 .security-panel {
   max-width: 590px;
@@ -565,8 +551,8 @@ pre {
   align-items: center;
   flex-wrap: wrap;
   gap: 18px;
-  background: #eaf0e3;
-  border: 1px solid #d1dcc8;
+  background: #f3edf2;
+  border: 1px solid #e0ccdc;
   border-radius: 6px;
   padding: 20px 24px;
   margin: 24px 0;
@@ -803,9 +789,9 @@ pre {
   white-space: nowrap;
 }
 .access-active {
-  background: #e5eddd;
-  border-color: #cbdabf;
-  color: #355c42;
+  background: #f0e5ef;
+  border-color: #e0ccdc;
+  color: #4b2948;
 }
 @media (max-width: 760px) {
   .security-setting {
@@ -885,9 +871,6 @@ pre {
   .admin-directory form button {
     width: 100%;
   }
-  .setup-steps {
-    gap: 12px;
-  }
   .account-main fieldset {
     padding: 20px;
   }
@@ -908,18 +891,42 @@ pre {
   }
 }
 
-.faq details { border-bottom: 1px solid var(--line); padding: 18px 0; }
-.faq summary { cursor: pointer; font-size: 18px; font-weight: 600; }
-.faq details p { max-width: 760px; margin-bottom: 4px; color: var(--muted); }
-.invoicer-wordmark { display: flex; align-items: baseline; gap: 6px; text-decoration: none; font-size: 25px; letter-spacing: -.04em; }
-.invoicer-wordmark img { width: 100px; align-self: center; }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 64px;
+  padding: 18px 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: 17px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "";
+  flex: 0 0 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  margin: -4px 4px 0 0;
+}
+.faq details[open] summary::after { transform: rotate(225deg); margin-top: 4px; }
+.faq summary:hover { color: var(--green); }
+.faq details p { max-width: 68ch; padding: 0 32px 22px 0; margin: 0; color: var(--muted); }
+.finance-wordmark, .invoicer-wordmark { display: flex; align-items: baseline; gap: 6px; text-decoration: none; font-size: 25px; letter-spacing: -.04em; }
+.finance-wordmark img, .invoicer-wordmark img { width: 100px; align-self: center; }
 .invoice-sample { margin: 0; background: #fff; border: 1px solid var(--line); padding: 28px; border-radius: 5px; transform: rotate(1deg); font-size: 12px; }
 .invoice-sample-top,.invoice-sample-meta,.invoice-sample-total { display: flex; justify-content: space-between; gap: 12px; }
 .invoice-sample-top > span { font-size: 30px; letter-spacing: -.04em; }
 .invoice-sample-meta { margin: 22px 0; }
 .invoice-sample-meta p { font-size: 12px; }
 .invoice-sample table { width: 100%; border-collapse: collapse; }
-.invoice-sample th { background: #174b3d; color: white; padding: 8px; }
+.invoice-sample th { background: #4b2948; color: white; padding: 8px; }
 .invoice-sample th:first-child,.invoice-sample td:first-child { text-align: left; }
 .invoice-sample td { padding: 13px 8px; border-bottom: 1px solid var(--line); text-align: right; }
 .invoice-sample-total { margin-top: 24px; padding: 12px 0; border-bottom: 3px double var(--line); }
@@ -930,3 +937,63 @@ pre {
 .invoicer-features h3 { margin: 10px 0; }
 .invoicer-features p { color: var(--muted); }
 @media(max-width:700px) { .invoicer-features { grid-template-columns: 1fr; gap: 18px; } .invoice-sample { padding: 16px; transform: none; } }
+
+/* Public-page finishing: shared rhythm, navigation and keyboard access. */
+:root { scrollbar-color: #a4aea3 #f8f5f6; }
+input, textarea { caret-color: var(--green); }
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 20px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--paper);
+  border: 1px solid var(--green);
+  transform: translateY(-180%);
+}
+.skip-link:focus { transform: none; }
+main:focus { outline: none; }
+body > header nav { gap: 8px 22px; }
+body > header nav a { display: inline-flex; align-items: center; min-height: 44px; }
+body > header nav a[aria-current="page"] { text-decoration: underline; text-decoration-thickness: 2px; }
+body > header nav a:last-child:hover { background: #df8c72; text-decoration: none; }
+.hero > *, .feature-row > *, .prices > * { min-width: 0; }
+.hero .actions { gap: 12px 24px; }
+.hero .actions > a:not(.button) { display: inline-flex; align-items: center; min-height: 44px; }
+.sample-report figcaption { flex-wrap: wrap; }
+.sample-report dl { gap: 14px; }
+.band > :last-child { margin-bottom: 0; }
+.faq { scroll-margin-top: 24px; }
+.reading-page main { max-width: 920px; }
+.reading-page .band h2 { font-size: clamp(24px, 3vw, 32px); line-height: 1.2; }
+.reading-page p { max-width: 70ch; }
+body > footer a { display: inline-flex; align-items: center; min-height: 44px; }
+.invoice-sample th:not(:first-child) { text-align: right; }
+.invoice-sample th, .invoice-sample td { padding-inline: 6px; }
+.invoice-sample :is(th, td):not(:first-child) { white-space: nowrap; }
+@media (max-width: 1000px) and (min-width: 761px) {
+  body > header { gap: 12px; }
+  body > header nav { gap: 8px 16px; }
+  .hero { gap: 32px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .feature-row { gap: 40px; }
+}
+@media (max-width: 760px) {
+  body > header { gap: 12px; }
+  body > header nav { width: 100%; gap: 4px 18px; }
+  body > header nav a { font-size: 13px; }
+  body > header nav a:last-child { margin-left: auto; }
+  .hero { padding-top: 24px; }
+  .sample-report { padding: 20px; }
+  .faq summary { font-size: 16px; }
+  body > footer { gap: 4px 24px; margin-top: 12px; }
+}
+@media (max-width: 760px) {
+  body > header { padding-top: 24px; }
+  body > header > a:not(.skip-link) { min-height: 36px; display: flex; align-items: center; }
+  body > header nav a:last-child { position: absolute; top: 20px; right: clamp(20px, 5vw, 64px); min-height: 40px; padding: 8px 10px; font-size: 12px; }
+}
+
+@media (max-width: 380px) {
+  .finance-wordmark, .invoicer-wordmark { font-size: 22px; }
+  .finance-wordmark img, .invoicer-wordmark img { width: 85px; }
+}

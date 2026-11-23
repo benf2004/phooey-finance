@@ -290,7 +290,6 @@ export async function securityRoute(req: Request, env: HostedEnv) {
     return page(
       "Add a little extra security",
       `
-      <ol class="setup-steps" aria-label="Account setup"><li>1. Account created</li><li>2. Email confirmed</li><li aria-current="step">3. Security</li></ol>
       <p class="page-lead">Your account is ready. Add two-factor authentication for an extra layer of protection.</p>
       <section class="security-panel"><span class="eyebrow">Optional</span><h2>Authenticator app</h2>
       <p>Use a time-based code from your authenticator app when you sign in.</p>

@@ -10,6 +10,7 @@ const paths = [
   ".dev.vars.example",
   ".gitignore",
   "wrangler.jsonc",
+  "wrangler.self-hosted.jsonc",
   "vite.config.ts",
   "vitest.config.ts",
   "tsconfig.json",

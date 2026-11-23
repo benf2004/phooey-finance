@@ -210,7 +210,7 @@ type AccountChoice = {
   institution: string;
   currency: string;
 };
-function providerMessages(data: z.infer<typeof accountSetSchema>) {
+export function providerMessages(data: z.infer<typeof accountSetSchema>) {
   return [
     ...new Set([
       ...(data.errors ?? []),
@@ -228,7 +228,7 @@ function providerMessages(data: z.infer<typeof accountSetSchema>) {
     ]),
   ];
 }
-async function fetchSimplefinAccounts(
+export async function fetchSimplefinAccounts(
   env: AppEnv,
   connection: { secret: string; generation: string },
   params: URLSearchParams,
@@ -421,6 +421,8 @@ type SyncPayload = {
   initialCursor?: number;
   windowRecords?: number;
   processedRecords?: number;
+  transactionsFrom?: string;
+  transactionsTo?: string;
 };
 export async function syncWindow(
   env: AppEnv,
@@ -550,6 +552,20 @@ export async function syncWindow(
     )
       .toISOString()
       .slice(0, 10);
+    // Track actual posted history separately from the requested date range.
+    // Pending transactions can use a fallback date, so do not count them here.
+    if (!tx.pending && tx.posted > 0) {
+      payload.transactionsFrom = payload.transactionsFrom
+        ? posted < payload.transactionsFrom
+          ? posted
+          : payload.transactionsFrom
+        : posted;
+      payload.transactionsTo = payload.transactionsTo
+        ? posted > payload.transactionsTo
+          ? posted
+          : payload.transactionsTo
+        : posted;
+    }
     const raw = {
       account_id: accountId,
       amount,
@@ -589,6 +605,8 @@ export async function syncWindow(
         end: payload.end,
         initialCursor: payload.initialCursor,
         processedRecords: (payload.processedRecords ?? 0) + records.length,
+        transactionsFrom: payload.transactionsFrom,
+        transactionsTo: payload.transactionsTo,
         problems: payload.problems,
       }
     : { ...payload, offset: end };
@@ -666,6 +684,8 @@ export function syncJobProgress(payload: SyncPayload, status: string) {
   return {
     from: new Date(start * 1000).toISOString().slice(0, 10),
     to: new Date(payload.end * 1000).toISOString().slice(0, 10),
+    transactionsFrom: payload.transactionsFrom ?? null,
+    transactionsTo: payload.transactionsTo ?? null,
     totalWindows,
     completedWindows,
     recordsProcessed: (payload.processedRecords ?? 0) + (payload.offset ?? 0),

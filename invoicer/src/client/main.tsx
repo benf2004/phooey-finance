@@ -1,5 +1,5 @@
-import { invoicePath, currentPath, bundled } from "./paths";
-import { StrictMode, useEffect, useRef, useState, lazy, Suspense } from "react";
+import { invoicePath, currentPath, bundled, financeUrl } from "./paths";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   FileText,
@@ -22,8 +22,8 @@ import { Editor } from "./editor";
 import { ApiPage, Customers, Invoices, Presets, SettingsPage } from "./pages";
 import "./styles.css";
 import "./workspace.css";
+import "./invoice-editor.css";
 
-const SharedInvoice = lazy(() => import("./shared-invoice"));
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [businesses, setBusinesses] = useState<{id: string; name: string}[]>([]);
@@ -63,10 +63,6 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
-    if (currentPath().startsWith("/s/")) {
-      setChecking(false);
-      return;
-    }
     history.replaceState({ ...history.state, invoiceEntry: entry.current }, "");
     api<{ csrfToken: string }>("/auth/session")
       .then((r) => {
@@ -133,13 +129,7 @@ function App() {
   const current = path === "/new" || path.startsWith("/invoices/") ? "/" : path;
   return (
     <>
-      {path.startsWith("/s/") ? (
-        <Suspense
-          fallback={<div className="loading-state">Opening invoice…</div>}
-        >
-          <SharedInvoice token={path.split("/")[2]} />
-        </Suspense>
-      ) : checking ? (
+      {checking ? (
         <div className="app-loading">
           <span className="brand-mark">
             <FileText size={22} />
@@ -154,7 +144,7 @@ function App() {
           }}
         />
       ) : (
-        <div className="invoice-app">
+        <div className={`invoice-app${path === "/new" || path.startsWith("/invoices/") ? " invoice-app-editor" : ""}`}>
           <header className="suite-nav">
             <a
               className="suite-brand"
@@ -181,7 +171,7 @@ function App() {
               className={mobileMenu ? "open" : ""}
               aria-label="Workspace"
             >
-              <a href="https://finance.phooey.foo/">Finance <ArrowRight size={15} /></a>
+              {financeUrl && <a href={financeUrl} onClick={e => { if (!canLeaveDraft()) e.preventDefault(); }}>Finance <ArrowRight size={15} /></a>}
               {nav.map((n) => (
                 <a
                   key={n.path}

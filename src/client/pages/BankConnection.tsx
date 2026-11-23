@@ -1,4 +1,6 @@
 import { DeleteAccountButton } from "./DeleteAccount";
+import { BankHistoryCheck } from "./BankHistoryCheck";
+import type { HistoryCheck } from "../../shared/sync-history";
 import type { Account } from "../../shared/models";
 import { useEffect, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
@@ -35,6 +37,7 @@ export function BankConnection({
   const [removeUnselected, setRemoveUnselected] = useState(false);
   const [start, setStart] = useState("");
   const [firstStart, setFirstStart] = useState("");
+  const [historyCheck, setHistoryCheck] = useState<HistoryCheck | null>(null);
   const today = new Date().toLocaleDateString("en-CA");
   const needsStart =
     !!connection && !connection.initial_sync_start && !connection.last_success;
@@ -44,6 +47,7 @@ export function BankConnection({
     setSelected(connection?.selectedAccounts ?? []);
     setRemoveUnselected(false);
     setFirstStart(connection?.initial_sync_start ?? "");
+    setHistoryCheck(null);
   }, [connection?.generation]);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -243,7 +247,7 @@ export function BankConnection({
               {needsStart && (
                 <Field
                   label="Sync transactions from"
-                  hint="Import from this date through today, as far back as your bank provides."
+                  hint="Request transactions from this date through today. Available history depends on your bank; some only provide the last 90 days. Import a bank CSV for older history."
                 >
                   <input
                     type="date"
@@ -330,7 +334,10 @@ export function BankConnection({
                       min="1970-01-01"
                       max={today}
                       value={start}
-                      onChange={(e) => setStart(e.target.value)}
+                      onChange={(e) => {
+                        setStart(e.target.value);
+                        setHistoryCheck(null);
+                      }}
                     />
                   </Field>
                   <Button
@@ -345,9 +352,43 @@ export function BankConnection({
                   >
                     Import history
                   </Button>
+                  <Button
+                    variant="secondary"
+                    busy={busy}
+                    disabled={
+                      !connection.selectionReady ||
+                      !selected.length ||
+                      dirty ||
+                      syncing ||
+                      !start ||
+                      busy
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        setHistoryCheck(null);
+                        setHistoryCheck(
+                          await post<HistoryCheck>("/sync/check-history", {
+                            start,
+                          }),
+                        );
+                      })
+                    }
+                  >
+                    Check available history
+                  </Button>
                 </div>
                 <p className="inline-note">
-                  Selected accounts only, in 45-day requests.
+                  To verify missing history, choose a date more than 90 days ago
+                  and check available history. This compares up to 45 days from
+                  that date with the most recent 45 days using two provider
+                  requests, without importing transactions.
+                </p>
+                {historyCheck && <BankHistoryCheck check={historyCheck} />}
+                <p className="inline-note">
+                  Available history depends on your bank; some only provide the
+                  last 90 days. Choosing an earlier date cannot retrieve history
+                  the bank does not provide. Use Settings → Import transactions
+                  to add older history from a bank CSV.
                 </p>
               </details>
               <details>

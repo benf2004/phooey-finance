@@ -8,6 +8,14 @@ import { hash } from "bcryptjs";
 let mf: Miniflare, cookie: string;
 let db: Awaited<ReturnType<Miniflare["getD1Database"]>>;
 let redirectAt: "claim" | "accounts" | undefined;
+let bankHistory:
+  | {
+      id: string;
+      posted: number;
+      amount: string;
+      description: string;
+    }[]
+  | undefined;
 const requests: {
   host: string;
   path: string;
@@ -19,6 +27,7 @@ const accessURL = "https://test:password@bridge.simplefin.org/simplefin";
 const setupToken = btoa("https://bridge.simplefin.org/simplefin/claim/test");
 beforeEach(async () => {
   redirectAt = undefined;
+  bankHistory = undefined;
   requests.length = 0;
   mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -73,7 +82,12 @@ beforeEach(async () => {
               currency: "USD",
               balance: "100.00",
               "balance-date": 1794000000,
-              transactions: [
+              transactions: bankHistory?.filter(
+                (tx) =>
+                  !url.searchParams.has("balances-only") &&
+                  tx.posted >= Number(url.searchParams.get("start-date")) &&
+                  tx.posted < Number(url.searchParams.get("end-date")),
+              ) ?? [
                 {
                   id: "tx",
                   posted: 1793000000,
@@ -137,13 +151,78 @@ async function queue(
   return ((await response.json()) as { jobId: string }).jobId;
 }
 async function finish(jobId: string) {
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 30; i++) {
     const job = await consume(jobId);
     expect(job?.error).toBeNull();
     if (job?.status === "complete") return;
   }
   throw new Error("Sync did not complete");
 }
+
+it.each([365, 90])(
+  "requests a full year and reports the actual history when the bank supplies %i days",
+  async (availableDays) => {
+    const today = Math.floor(Date.now() / 86400000) * 86400;
+    const start = today - 365 * 86400;
+    bankHistory = Array.from({ length: 12 }, (_, i) => 15 + i * 30)
+      .filter((daysAgo) => daysAgo < availableDays)
+      .map((daysAgo) => ({
+        id: `history-${daysAgo}`,
+        posted: today - daysAgo * 86400,
+        amount: "-10.00",
+        description: "Historical transaction",
+      }));
+    await connect();
+    await selection();
+    const jobId = await queue(
+      new Date(start * 1000).toISOString().slice(0, 10),
+    );
+    await finish(jobId);
+
+    const windows = requests
+      .map((request) => new URLSearchParams(request.query))
+      .filter((params) => params.has("start-date"));
+    expect(windows).toHaveLength(9);
+    let cursor = start;
+    for (const params of windows) {
+      expect(Number(params.get("start-date"))).toBe(cursor);
+      const end = Number(params.get("end-date"));
+      expect(end - cursor).toBeGreaterThan(0);
+      expect(end - cursor).toBeLessThanOrEqual(45 * 86400);
+      expect(params.getAll("account")).toEqual(["bank"]);
+      cursor = end;
+    }
+    expect(cursor).toBeGreaterThanOrEqual(today);
+    const dates = bankHistory
+      .map((tx) => new Date(tx.posted * 1000).toISOString().slice(0, 10))
+      .sort();
+    expect(
+      await db
+        .prepare(
+          "SELECT COUNT(*) AS count,MIN(posted) AS oldest,MAX(posted) AS newest FROM transactions",
+        )
+        .first(),
+    ).toEqual({
+      count: bankHistory.length,
+      oldest: dates[0],
+      newest: dates.at(-1),
+    });
+    const state = (await (await get("/sync")).json()) as {
+      jobs: { status: string; syncProgress: Record<string, unknown> }[];
+    };
+    expect(state.jobs[0]).toMatchObject({
+      status: "complete",
+      syncProgress: {
+        from: new Date(start * 1000).toISOString().slice(0, 10),
+        percent: 100,
+        completedWindows: 9,
+        recordsProcessed: bankHistory.length,
+        transactionsFrom: dates[0],
+        transactionsTo: dates.at(-1),
+      },
+    });
+  },
+);
 async function consume(jobId: string) {
   const worker = await mf.getWorker();
   if (!("queue" in worker) || typeof worker.queue !== "function")

@@ -110,7 +110,7 @@ describe("subscriber workspace", () => {
     expect((await request(app + "/", { headers })).status).toBe(200);
     expect((await request(app + "/invoicer/", { headers })).status).toBe(200);
     expect(gateway.mock.calls.every(([req]) => new URL(req.url).origin === app)).toBe(true);
-    // Public invoice links still identify the workspace for signed-out recipients.
+    // Bundled requests retain their assigned workspace origin.
     expect(service.mock.calls[0][0].url).toBe(slot + "/");
   });
   it("requires an app session and rejects another owner's session in the workspace", async () => {
@@ -141,13 +141,13 @@ describe("subscriber workspace", () => {
     expect((await request(app + "/invoicer/", { headers: { Cookie } })).status).toBe(402);
     expect(service).not.toHaveBeenCalled();
   });
-  it("redirects old browser links but retains public invoice access", async () => {
+  it("redirects old browser links and rejects public invoice access", async () => {
     const { request, service } = gatewayFixture();
     expect((await request(slot + "/")).headers.get("location")).toBe(app + "/");
     expect((await request(slot + "/transactions?account=one")).headers.get("location")).toBe(app + "/transactions?account=one");
     expect((await request(slot + "/cloud/enter?view=invoicer")).headers.get("location")).toBe(app + "/invoicer/");
-    expect((await request(slot + "/invoicer/s/shared/info")).status).toBe(200);
-    expect(service).toHaveBeenCalledOnce();
+    expect((await request(slot + "/invoicer/s/shared/info")).status).toBe(404);
+    expect(service).not.toHaveBeenCalled();
   });
   it("does not fall back to the old origin when a workspace binding is missing", async () => {
     const { env, request } = gatewayFixture();
@@ -1065,7 +1065,7 @@ describe("subscriber workspace", () => {
       await verifyTotp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "287082", 59),
     ).toBe(1);
   });
-  it("forwards only entitled invoice requests and keeps the service credential off public shares", async () => {
+  it("forwards only entitled invoice requests and rejects public shares", async () => {
     const { env, request, service, db } = fixture();
     const cookie = (await issueSession(env, "owner", slot, "dashboard")).split(
       ";",
@@ -1088,10 +1088,10 @@ describe("subscriber workspace", () => {
       "Bearer " + env.INVOICER_KEY,
     );
     expect(service.mock.calls[0][0].headers.has("cookie")).toBe(false);
-    await request(slot + "/invoicer/s/share/info", {
+    expect((await request(slot + "/invoicer/s/share/info", {
       headers: { Authorization: "Bearer forged" },
-    });
-    expect(service.mock.calls[1][0].headers.has("authorization")).toBe(false);
+    })).status).toBe(404);
+    expect(service).toHaveBeenCalledOnce();
     db.raw.exec("UPDATE customers SET paid_until=0");
     expect(
       (
@@ -1100,7 +1100,7 @@ describe("subscriber workspace", () => {
         })
       ).status,
     ).toBe(402);
-    expect(service).toHaveBeenCalledTimes(2);
+    expect(service).toHaveBeenCalledTimes(1);
   });
   it("binds the iPhone grant to its verifier, workspace, and one exchange", async () => {
     const { env, request } = fixture();
@@ -1184,6 +1184,20 @@ describe('Invoicer own-domain gateway', () => {
     const asset=await f.request(invoice+'/assets/app.js');
     expect(asset.headers.get('Content-Type')).toBe('text/javascript');
     expect(await asset.text()).toBe('/assets/app.js');
+  });
+  it('rejects old public invoice URLs on both domains without forwarding',async()=>{
+    const f=invoiceFixture();
+    for (const path of ['/s/token','/w/one/s/token','/invoicer/s/token']) {
+      for (const suffix of ['', '/info', '/pdf']) {
+        for (const method of ['GET','HEAD']) {
+          const response=await f.request(invoice+path+suffix,{method});
+          expect(response.status).toBe(404);
+          expect(response.headers.get('Cache-Control')).toBe('no-store');
+        }
+      }
+    }
+    expect((await f.request(app+'/invoicer/s/token')).status).toBe(404);
+    expect(f.service).not.toHaveBeenCalled();
   });
   it('binds the one-use login handoff to the initiating browser',async()=>{
     const f=invoiceFixture();

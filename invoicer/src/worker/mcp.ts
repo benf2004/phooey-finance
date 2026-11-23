@@ -35,17 +35,16 @@ export async function handleMcp(request: Request, env: Env, ctx: { waitUntil(pro
       if (!response.ok) return {isError:true,content:[{type:'text' as const,text:await response.text()}]};
       return {content:[{type:'resource' as const,resource:{uri:`invoicer://invoices/${id}/invoice.pdf`,mimeType:'application/pdf',blob:Buffer.from(await response.arrayBuffer()).toString('base64')}}]};
     });
-    tool('create_invoice','Create an invoice draft. Does not issue or share it.',invoiceInputSchema.omit({status:true}),false,a=>({path:'/invoices',method:'POST',data:{...a,status:'draft'}}));
+    tool('create_invoice','Create an invoice draft. Does not issue it.',invoiceInputSchema.omit({status:true}),false,a=>({path:'/invoices',method:'POST',data:{...a,status:'draft'}}));
     tool('update_invoice','Replace an active draft with the supplied document. Read it first and include its current revision.',invoiceInputSchema.omit({status:true}).extend({id,revision}),false,a=>({path:`/invoices/${a.id}`,method:'PUT',data:a}));
     tool('list_customers','List saved customers for this business.',z.object({page:z.number().int().positive().default(1)}),true,a=>({path:`/customers?page=${a.page}`}));
     tool('create_customer','Save a customer for reuse on invoices.',z.object({party:partySchema}),false,a=>({path:'/customers',method:'POST',data:a}));
     tool('update_customer','Update a customer using its current revision.',z.object({id,revision,party:partySchema}),false,a=>({path:`/customers/${a.id}`,method:'PUT',data:a}));
     tool('list_presets','Read saved invoice branding presets.',z.object({}),true,()=>({path:'/presets'}));
     tool('record_payment','Set the cumulative amount already paid, as a decimal string in the invoice currency. This records payment; it does not transfer money.',z.object({id,revision,amountPaid:z.string()}),false,a=>({path:`/invoices/${a.id}/payment`,method:'POST',data:a}));
-    for (const action of ['issue','duplicate','archive','restore','void','share'] as const) {
-      tool(action+'_invoice',action === 'share' ? 'Create a public read link. Anyone with the link can read the invoice. Requires explicit user intent to share.' : `${action} an invoice using its current revision. Issue freezes its contents.`,z.object({id,revision}),false,a=>({path:`/invoices/${a.id}/${action}`,method:'POST',data:{revision:a.revision}}));
+    for (const action of ['issue','duplicate','archive','restore','void'] as const) {
+      tool(action+'_invoice',`${action} an invoice using its current revision. Issue freezes its contents.`,z.object({id,revision}),false,a=>({path:`/invoices/${a.id}/${action}`,method:'POST',data:{revision:a.revision}}));
     }
-    tool('revoke_invoice_share','Revoke public access to an invoice.',z.object({id,revision}),false,a=>({path:`/invoices/${a.id}/share`,method:'DELETE',data:{revision:a.revision}}));
     return server;
   };
   const url = new URL(request.url);

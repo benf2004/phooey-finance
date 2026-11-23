@@ -8,7 +8,7 @@ export const partySchema = z.object({ name: text(200).trim().default(''), addres
 export type Party = z.infer<typeof partySchema>;
 export const emptyParty: Party = { name: '', address: '', email: '', phone: '', taxId: '' };
 export const labelDefaults = {
-  title: 'INVOICE', from: 'From', billTo: 'Bill to', shipTo: 'Ship to', invoiceNumber: 'Invoice number', date: 'Date', dueDate: 'Due date', paymentTerms: 'Payment terms', poNumber: 'PO number', item: 'Description', quantity: 'Qty', rate: 'Rate', amount: 'Amount', subtotal: 'Subtotal', discount: 'Discount', tax: 'Tax', shipping: 'Shipping', total: 'Total', amountPaid: 'Amount paid', balanceDue: 'Balance due', notes: 'Notes', terms: 'Terms',
+  title: 'INVOICE', from: 'From', billTo: 'Bill To', shipTo: 'Ship To', invoiceNumber: 'Invoice number', date: 'Date', dueDate: 'Due Date', paymentTerms: 'Payment Terms', poNumber: 'PO Number', item: 'Item', quantity: 'Quantity', rate: 'Rate', amount: 'Amount', subtotal: 'Subtotal', discount: 'Discount', tax: 'Tax', shipping: 'Shipping', total: 'Total', amountPaid: 'Amount Paid', balanceDue: 'Balance Due', notes: 'Notes', terms: 'Terms',
 };
 export type LabelKey = keyof typeof labelDefaults;
 const labelShape = Object.fromEntries(Object.keys(labelDefaults).map(k => [k, text(64).min(1).optional()])) as Record<LabelKey, z.ZodOptional<z.ZodString>>;
@@ -85,12 +85,12 @@ export function toMinor(value: string | Decimal, currency: string) {
   return n.toNumber();
 }
 export function fromMinor(value: number, currency: string) { return new Decimal(value).div(new Decimal(10).pow(minorDigits(currency))).toFixed(minorDigits(currency)); }
-export function money(value: number, currency: string, locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'code' }).format(new Decimal(value).div(new Decimal(10).pow(minorDigits(currency))).toNumber());
+export function money(value: number, currency: string, locale = 'en-US', currencyDisplay: 'code' | 'symbol' = 'code') {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay }).format(new Decimal(value).div(new Decimal(10).pow(minorDigits(currency))).toNumber());
 }
 // Unit rates retain their input precision; only calculated line amounts round to minor units.
-export function rateMoney(value: string, currency: string, locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'code', maximumFractionDigits: Math.max(minorDigits(currency), new Decimal(value).decimalPlaces()) }).format(new Decimal(value).toNumber());
+export function rateMoney(value: string, currency: string, locale = 'en-US', currencyDisplay: 'code' | 'symbol' = 'code') {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay, maximumFractionDigits: Math.max(minorDigits(currency), new Decimal(value).decimalPlaces()) }).format(new Decimal(value).toNumber());
 }
 export function calculate(doc: InvoiceDocument): Totals {
   const lines = doc.items.map(item => toMinor(new Decimal(item.quantity).mul(item.rate), doc.currency));

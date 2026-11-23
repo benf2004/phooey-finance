@@ -1,5 +1,7 @@
 # Operations and recovery
 
+For admin-key installations, recover access by replacing `ADMIN_KEY` using `wrangler secret put ADMIN_KEY` with the appropriate deployment configuration. The combined edition uses `--config wrangler.self-hosted.jsonc`; one rotation invalidates browser access to both apps. Keep `ENCRYPTION_KEY` unchanged so existing bank connections remain readable. Revoke integration keys separately. Password-recovery instructions below apply only to legacy username/password installations.
+
 ## Imports and exports
 
 Preview CSV mapping before import. Duplicate candidates are highlighted rather than automatically discarded: identical transactions can be legitimate. Submitted rows retain import-specific idempotency keys. If a job fails, use Retry in Settings, or submit the identical file/mapping/skipped rows again to resume. Completed imports are recognized and not reinserted.
@@ -50,7 +52,11 @@ Apply new D1 migrations before deploying the matching Worker. `npm run check` mu
 
 ## Account selection and deletion
 
-Settings → Bank connection lists accounts before importing transactions. Select accounts and choose **Import selected**. Initial imports cover 45 days; older history is fetched in consecutive windows of at most 45 days. Existing installations pause sync until you confirm a selection. The optional removal checkbox deletes previously imported unselected accounts, their transactions and account-specific rules after confirmation. Manual accounts remain. Recorded tax payments are retained with bank links cleared.
+Settings → Bank connection lists accounts before importing transactions. Select accounts, choose a starting date, and choose **Import selected**. Imports request history from that date in consecutive windows of at most 45 days. Existing installations pause sync until you confirm a selection. The optional removal checkbox deletes previously imported unselected accounts, their transactions and account-specific rules after confirmation. Manual accounts remain. Recorded tax payments are retained with bank links cleared.
+
+To investigate missing older history, open **Import older transactions**, choose a date more than 90 days ago with known bank activity, and select **Check available history**. The authenticated `POST /api/sync/check-history` endpoint accepts `{ "start": "YYYY-MM-DD" }`. It makes two direct SimpleFIN requests: up to 45 days from the chosen date (ending before the last 90 days), and the most recent 45 days. Results show each selected account's returned transaction dates, counts, provider warnings, and the number of returned IDs missing from the ledger. It does not import transactions or advance sync checkpoints. Checks are limited to two per hour and share the normal provider request quota; wait for any active sync to finish first.
+
+Older transactions returned but missing locally indicate an import gap; older transactions already stored suggest checking ledger filters. An empty older sample with recent activity supports a provider history limitation only if a bank statement confirms older activity, and does not establish an exact 90-day cutoff. Omitted accounts, warnings, out-of-range responses, or empty samples for both periods are inconclusive. The check tests sample periods, not the entire requested year.
 
 Settings → Delete data offers **Delete all transactions** and **Reset app data**, each with typed confirmation. Deleting transactions keeps accounts, rules, categories, and tax payments, and pauses bank sync. Reset removes financial data, settings, the bank connection, and MCP grants; admin secrets and the current login remain. Stored import/export files are removed by a background cleanup job; files uploaded after the reset are preserved. Active jobs must finish before deletion. These operations cannot be undone without a backup.
 

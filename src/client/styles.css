@@ -11,8 +11,8 @@
   --ink: #20252b;
   --muted: #65717d;
   --line: #e1e5ea;
-  --green: #28634a;
-  --green-soft: #eaf1e8;
+  --green: #4b2948;
+  --green-soft: #f0e5ef;
   --amber: #936a2b;
   --amber-soft: #faf1df;
   --red: #af4940;
@@ -194,7 +194,7 @@ small {
   white-space: nowrap;
 }
 .positive {
-  color: var(--green);
+  color: var(--flow-income, #217040);
 }
 .negative {
   color: var(--red);
@@ -671,7 +671,7 @@ small {
   width: 100%;
   margin-top: 12px;
   background: #f0f3e9;
-  color: #254e39;
+  color: #4b2948;
 }
 .tax-card .due {
   display: inline-flex;
@@ -1306,13 +1306,13 @@ table.transactions-table td {
   min-height: 100vh;
 }
 .login-story {
-  background: #e9ede2;
+  background: #f3edf2;
   padding: 42px 64px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 55px;
-  color: #233b2c;
+  color: #382c36;
 }
 .login-story h1 {
   font-size: clamp(45px, 5vw, 76px);
@@ -1323,12 +1323,12 @@ table.transactions-table td {
 }
 .login-story p {
   max-width: 350px;
-  color: #71816c;
+  color: #70636d;
   font-size: 17px;
 }
 .login-foot {
   font-size: 12px;
-  color: #71816c;
+  color: #70636d;
 }
 .ledger-art {
   max-width: 360px;
@@ -1481,8 +1481,8 @@ table.transactions-table td {
   --ink: #e6e9ed;
   --muted: #a3adb8;
   --line: #363d46;
-  --green: #8cbd9b;
-  --green-soft: #2c4031;
+  --green: #e9997f;
+  --green-soft: #50364b;
   --amber: #d4b278;
   --amber-soft: #3e3727;
   --red: #e3a098;
@@ -1492,7 +1492,7 @@ table.transactions-table td {
   background: var(--bg);
 }
 [data-theme="dark"] .button.primary {
-  color: #18261c;
+  color: #382c36;
 }
 [data-theme="dark"] .sidebar nav a {
   color: #a3afa0;
@@ -1501,10 +1501,10 @@ table.transactions-table td {
   color: var(--green);
 }
 [data-theme="dark"] .tax-card {
-  background: #304d39;
+  background: #50364b;
 }
 [data-theme="dark"] .tax-card .button {
-  color: #254e39;
+  color: #4b2948;
 }
 [data-theme="dark"] .avatar {
   border-color: var(--line);
@@ -1513,12 +1513,12 @@ table.transactions-table td {
   border-color: #574b32;
 }
 [data-theme="dark"] .login-story {
-  background: #263c2c;
-  color: #d7e5ce;
+  background: #382e39;
+  color: #f8f0f5;
 }
 [data-theme="dark"] .login-story p,
 [data-theme="dark"] .login-foot {
-  color: #a8b7a2;
+  color: #c8b9c4;
 }
 [data-theme="dark"] .ledger-art,
 [data-theme="dark"] .ledger-art > div {
@@ -1985,9 +1985,20 @@ table.transactions-table td {
   flex: 1;
   cursor: pointer;
 }
-.brand-lockup, .brand-lockup img {display:block;width:145px;height:auto}
-[data-theme="light"] .brand-lockup img {content:url("/business/assets/wordmark.svg")}
-[data-theme="dark"] .brand-lockup img {content:url("/business/assets/wordmark-dark.svg")}
+.brand-lockup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 20px;
+  font-weight: 450;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.brand-lockup picture { display: block; align-self: center; flex-shrink: 0; }
+.brand-lockup img { display: block; width: 82px; height: auto; }
+[data-theme="light"] .brand-lockup img {content:url("/business/assets/phooey.svg")}
+[data-theme="dark"] .brand-lockup img {content:url("/business/assets/phooey-dark.svg")}
 
 .view-switch,.tag-shelf { display:flex; gap:4px; margin:0 0 16px; align-items:center; }
 .view-switch { width:max-content; padding:3px; border:1px solid var(--line); border-radius:8px; background:var(--surface-soft); }

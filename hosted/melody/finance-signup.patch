@@ -91,61 +91,22 @@ diff --git a/server/src/handlers/identity/mfa.ts b/server/src/handlers/identity/
 diff --git a/server/src/pages/blocks/SignUp.tsx b/server/src/pages/blocks/SignUp.tsx
 --- a/server/src/pages/blocks/SignUp.tsx
 +++ b/server/src/pages/blocks/SignUp.tsx
-@@ -40,6 +40,10 @@
-   return (
-     <>
-       <ViewTitle title={signUp.title[locale]} />
-+      <ol className='finance-steps' aria-label='Account setup'>
-+        <li aria-current='step'>1. Account</li><li>2. Confirm email</li><li>3. Security</li>
-+      </ol>
-+      <p className='finance-intro'>{{en: 'A little less admin. A little more clarity.', fr: 'Moins de gestion. Plus de clarté.', zh: '减少管理，让财务更清晰。'}[locale]}</p>
-       {providers}
-       <form
-         autoComplete='on'
-@@ -71,18 +75,11 @@
+@@ -71,6 +71,11 @@
                value,
              )}
            />
--          <PasswordField
--            label={signUp.confirmPassword[locale]}
--            required
--            name='confirmPassword'
--            value={values.confirmPassword}
--            error={errors.confirmPassword}
--            autoComplete='new-password'
--            onChange={(value) => onChange(
--              'confirmPassword',
--              value,
--            )}
--          />
 +          <p className='finance-hint'>{{
 +            en: 'Use 8 or more characters, including uppercase and lowercase letters, a number, and a symbol.',
 +            fr: 'Utilisez au moins 8 caractères, avec majuscules, minuscules, chiffre et symbole.',
 +            zh: '使用至少 8 个字符，包含大小写字母、数字和符号。',
 +          }[locale]}</p>
-           {initialProps.enableNames && (
-             <>
-               <Field
+           <PasswordField
+             label={signUp.confirmPassword[locale]}
+             required
 diff --git a/server/src/pages/hooks/useSignUpForm.tsx b/server/src/pages/hooks/useSignUpForm.tsx
 --- a/server/src/pages/hooks/useSignUpForm.tsx
 +++ b/server/src/pages/hooks/useSignUpForm.tsx
-@@ -10,7 +10,6 @@
- } from 'configs'
- import {
-   validate, emailField, passwordField,
--  confirmPasswordField,
-   requiredField,
- } from 'pages/tools/form'
- import {
-@@ -104,7 +103,6 @@
-       const definition = {
-         email: emailField(locale),
-         password: passwordField(locale),
--        confirmPassword: confirmPasswordField(locale),
-         firstName: initialProps.namesIsRequired
-           ? string().required(validateError.firstNameIsEmpty[locale])
-           : string(),
-@@ -138,7 +136,7 @@
+@@ -138,7 +138,7 @@
      onSubmitError(null)
      switch (name) {
      case 'email':
@@ -240,42 +201,7 @@ diff --git a/server/src/pages/blocks/VerifyEmail.tsx b/server/src/pages/blocks/V
 diff --git a/server/src/pages/blocks/SignUp.test.tsx b/server/src/pages/blocks/SignUp.test.tsx
 --- a/server/src/pages/blocks/SignUp.test.tsx
 +++ b/server/src/pages/blocks/SignUp.test.tsx
-@@ -82,7 +82,7 @@
-     )
- 
-     it(
--      'renders email, password, and confirm password fields',
-+      'renders email and password without a redundant password confirmation',
-       () => {
-         const container = setup()
-         const emailField = container.querySelector('input[name="email"]')
-@@ -92,7 +92,7 @@
-         expect(passwordField).toBeDefined()
- 
-         const confirmPasswordField = container.querySelector('input[name="confirmPassword"]')
--        expect(confirmPasswordField).toBeDefined()
-+        expect(confirmPasswordField).toBeNull()
-       },
-     )
- 
-@@ -148,16 +148,6 @@
-         )
-         expect(defaultProps.onChange).toHaveBeenCalledWith(
-           'password',
--          '123456',
--        )
--
--        const confirmPasswordField = container.querySelector('input[name="confirmPassword"]') as HTMLInputElement
--        fireEvent.input(
--          confirmPasswordField,
--          { target: { value: '123456' } },
--        )
--        expect(defaultProps.onChange).toHaveBeenCalledWith(
--          'confirmPassword',
-           '123456',
-         )
- 
-@@ -254,7 +244,7 @@
+@@ -254,7 +254,7 @@
          expect(privacyLink).toBeNull()
  
          expect(container.textContent).not.toContain(signUp.bySignUp.en)
@@ -284,7 +210,7 @@ diff --git a/server/src/pages/blocks/SignUp.test.tsx b/server/src/pages/blocks/S
        },
      )
  
-@@ -278,7 +268,7 @@
+@@ -278,7 +278,7 @@
          const privacyLink = container.querySelector('a[href*="privacy"]')
          expect(privacyLink).toBeNull()
  
@@ -293,7 +219,7 @@ diff --git a/server/src/pages/blocks/SignUp.test.tsx b/server/src/pages/blocks/S
        },
      )
  
-@@ -302,7 +292,7 @@
+@@ -302,7 +302,7 @@
          const termsLink = container.querySelector('a[href*="terms"]')
          expect(termsLink).toBeNull()
  
@@ -301,21 +227,6 @@ diff --git a/server/src/pages/blocks/SignUp.test.tsx b/server/src/pages/blocks/S
 +        expect(container.querySelector('.text-gray')?.textContent ?? '').not.toContain(signUp.linkConnect.en)
        },
      )
- 
-@@ -443,12 +433,12 @@
- 
-             expect(inputNames).toContain('email')
-             expect(inputNames).toContain('password')
--            expect(inputNames).toContain('confirmPassword')
-+            expect(inputNames).not.toContain('confirmPassword')
-             expect(inputNames).toContain('firstName')
-             expect(inputNames).toContain('lastName')
- 
-             // Should not contain any custom attribute fields
--            expect(inputNames.length).toBe(5) // email, password, confirmPassword, firstName, lastName
-+            expect(inputNames.length).toBe(4) // email, password, firstName, lastName
-           },
-         )
  
 diff --git a/server/src/pages/blocks/EmailMfa.test.tsx b/server/src/pages/blocks/EmailMfa.test.tsx
 --- a/server/src/pages/blocks/EmailMfa.test.tsx
@@ -406,3 +317,39 @@ diff --git a/server/src/pages/blocks/Layout.test.tsx b/server/src/pages/blocks/L
        },
      )
    },
+diff --git a/server/src/pages/hooks/useSignUpForm.test.tsx b/server/src/pages/hooks/useSignUpForm.test.tsx
+--- a/server/src/pages/hooks/useSignUpForm.test.tsx
++++ b/server/src/pages/hooks/useSignUpForm.test.tsx
+@@ -1084,3 +1084,32 @@
+     )
+   },
+ )
++
++
++test.each(['', 'Different1!'])(
++  'blocks signup when password confirmation is %j',
++  async (confirmation) => {
++    const fetchSpy = vi.spyOn(global, 'fetch')
++    try {
++      const { result } = renderHook(() => useSignUpForm({
++        locale: 'en',
++        initialProps: { ...dummyInitialProps, namesIsRequired: false, enableNames: false },
++        params: dummyParams,
++        onSubmitError: vi.fn(),
++        onSwitchView: vi.fn(),
++      }))
++      act(() => {
++        result.current.handleChange('email', 'test@example.com')
++        result.current.handleChange('password', 'Password1!')
++        result.current.handleChange('confirmPassword', confirmation)
++      })
++      await act(async () => {
++        result.current.handleSubmit({ preventDefault: vi.fn() } as unknown as Event)
++      })
++      expect(result.current.errors.confirmPassword).toBeTruthy()
++      expect(fetchSpy).not.toHaveBeenCalled()
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  },
++)
